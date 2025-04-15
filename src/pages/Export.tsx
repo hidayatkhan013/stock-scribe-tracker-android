@@ -22,6 +22,7 @@ import { format, subMonths } from 'date-fns';
 import { CalendarIcon, FileText, FileDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
+import { db, getTransactionsForUser, getPortfolioSummary, getProfitLossReport } from '@/lib/db';
 
 const Export = () => {
   const { currentUser } = useAuth();
@@ -31,18 +32,247 @@ const Export = () => {
   const [dataType, setDataType] = useState<'all' | 'transactions' | 'portfolio' | 'summaries'>('all');
   const [startDate, setStartDate] = useState<Date>(subMonths(new Date(), 3));
   const [endDate, setEndDate] = useState<Date>(new Date());
+  const [exportHistory, setExportHistory] = useState<{
+    type: string;
+    dataType: string;
+    date: Date;
+    fileName: string;
+  }[]>([]);
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    if (!currentUser?.id) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please log in to export data',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsLoading(true);
     
-    // Simulate export process
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      let data: any = [];
+      let fileName = `stockscribe-${dataType}-${format(new Date(), 'yyyy-MM-dd')}`;
+      
+      // Fetch appropriate data based on the selected data type
+      if (dataType === 'all' || dataType === 'transactions') {
+        const transactions = await getTransactionsForUser(currentUser.id);
+        const filteredTransactions = transactions.filter(tx => {
+          const txDate = new Date(tx.date);
+          return txDate >= startDate && txDate <= endDate;
+        });
+        
+        if (dataType === 'all' || dataType === 'transactions') {
+          data.push(...filteredTransactions.map(tx => ({
+            ...tx,
+            date: format(new Date(tx.date), 'yyyy-MM-dd'),
+          })));
+        }
+      }
+      
+      if (dataType === 'all' || dataType === 'portfolio') {
+        const portfolio = await getPortfolioSummary(currentUser.id);
+        if (dataType === 'all' || dataType === 'portfolio') {
+          data.push(...portfolio);
+        }
+      }
+      
+      if (dataType === 'all' || dataType === 'summaries') {
+        const reports = await getProfitLossReport(currentUser.id, startDate, endDate);
+        if (dataType === 'all' || dataType === 'summaries') {
+          if (reports.daily.length) {
+            data.push(...reports.daily);
+          }
+          if (reports.stocks.length) {
+            data.push(...reports.stocks);
+          }
+        }
+      }
+      
+      // Generate the appropriate file format
+      if (exportType === 'csv') {
+        downloadCSV(data, fileName);
+      } else {
+        downloadPDF(data, fileName);
+      }
+      
+      // Add to export history
+      const newExportHistory = [
+        ...exportHistory,
+        {
+          type: exportType.toUpperCase(),
+          dataType: dataType,
+          date: new Date(),
+          fileName: `${fileName}.${exportType}`
+        }
+      ];
+      setExportHistory(newExportHistory);
+      
       toast({
-        title: 'Export Queued',
-        description: 'Your export is being prepared and will be available soon.',
+        title: 'Export Successful',
+        description: `Your data has been exported as ${fileName}.${exportType}`,
       });
-    }, 1500);
+    } catch (error) {
+      console.error('Export error:', error);
+      toast({
+        title: 'Export Failed',
+        description: 'There was a problem exporting your data. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const downloadCSV = (data: any[], fileName: string) => {
+    // Handle empty data
+    if (!data.length) {
+      toast({
+        title: 'No Data',
+        description: 'There is no data to export for the selected period and type.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    try {
+      // Get headers from the first object's keys
+      const headers = Object.keys(data[0]);
+      
+      // Create CSV content
+      let csvContent = headers.join(',') + '\n';
+      
+      // Add data rows
+      data.forEach(item => {
+        const row = headers.map(header => {
+          // Handle objects, arrays, and other complex types
+          const value = item[header];
+          if (typeof value === 'object' && value !== null) {
+            return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
+          }
+          // Handle strings with commas
+          if (typeof value === 'string' && value.includes(',')) {
+            return `"${value}"`;
+          }
+          return value;
+        }).join(',');
+        csvContent += row + '\n';
+      });
+      
+      // Create a Blob and download link
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      
+      // Create download URL
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${fileName}.csv`);
+      link.style.visibility = 'hidden';
+      
+      // Append to body, click, and remove
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('CSV generation error:', error);
+      toast({
+        title: 'Export Error',
+        description: 'Could not generate CSV file. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+  
+  const downloadPDF = (data: any[], fileName: string) => {
+    // Since we can't easily generate PDFs in the browser without a library,
+    // we'll create a simple HTML table and use the browser's print functionality
+    
+    // Handle empty data
+    if (!data.length) {
+      toast({
+        title: 'No Data',
+        description: 'There is no data to export for the selected period and type.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    try {
+      const headers = Object.keys(data[0]);
+      
+      // Create a new window
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        toast({
+          title: 'Export Error',
+          description: 'Please allow pop-ups for this site to export as PDF.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      
+      // Generate HTML content
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>${fileName}</title>
+            <style>
+              body { font-family: Arial, sans-serif; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f2f2f2; }
+              h1 { text-align: center; }
+              .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #666; }
+            </style>
+          </head>
+          <body>
+            <h1>StockScribe - ${dataType.charAt(0).toUpperCase() + dataType.slice(1)} Export</h1>
+            <p>Date Range: ${format(startDate, 'MMM dd, yyyy')} to ${format(endDate, 'MMM dd, yyyy')}</p>
+            <table>
+              <thead>
+                <tr>
+                  ${headers.map(header => `<th>${header}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${data.map(row => `
+                  <tr>
+                    ${headers.map(header => {
+                      const value = row[header];
+                      if (typeof value === 'object' && value !== null) {
+                        return `<td>${JSON.stringify(value)}</td>`;
+                      }
+                      return `<td>${value}</td>`;
+                    }).join('')}
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <div class="footer">
+              Generated by StockScribe on ${format(new Date(), 'MMM dd, yyyy, HH:mm')}
+            </div>
+          </body>
+        </html>
+      `);
+      
+      // Wait for content to be loaded
+      printWindow.document.close();
+      printWindow.focus();
+      
+      // Use timeout to ensure content is loaded
+      setTimeout(() => {
+        printWindow.print();
+        // The user can save as PDF from the print dialog
+      }, 500);
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      toast({
+        title: 'Export Error',
+        description: 'Could not generate PDF file. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -188,9 +418,25 @@ const Export = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-8 text-muted-foreground">
-              No previous exports found
-            </div>
+            {exportHistory.length > 0 ? (
+              <div className="space-y-4">
+                {exportHistory.map((export_, index) => (
+                  <div key={index} className="flex justify-between items-center border-b pb-2">
+                    <div>
+                      <p className="font-medium">{export_.fileName}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {format(export_.date, "MMM dd, yyyy HH:mm")} - {export_.dataType}
+                      </p>
+                    </div>
+                    <Badge variant="outline">{export_.type}</Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                No previous exports found
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
