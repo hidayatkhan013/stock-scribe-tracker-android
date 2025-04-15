@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Plus, Search, ArrowUpDown, ArrowDown, ArrowUp } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { db, Transaction, Stock } from '@/lib/db';
+import { db, Transaction, Stock, Currency } from '@/lib/db';
 import {
   Table,
   TableBody,
@@ -28,6 +28,31 @@ const Transactions = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [stocks, setStocks] = useState<Map<number | undefined, Stock>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
+  const [defaultCurrency, setDefaultCurrency] = useState<string>('USD');
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [exchangeRates, setExchangeRates] = useState<{[key: string]: number}>({});
+
+  useEffect(() => {
+    const loadCurrencies = async () => {
+      const allCurrencies = await db.currencies.toArray();
+      setCurrencies(allCurrencies);
+      
+      // Create exchange rates lookup object
+      const rates: {[key: string]: number} = {};
+      allCurrencies.forEach(curr => {
+        rates[curr.code] = curr.exchangeRate;
+      });
+      setExchangeRates(rates);
+      
+      // Check for default currency in settings
+      const settings = await db.settings.where('userId').equals(currentUser?.id || '').first();
+      if (settings?.defaultCurrency) {
+        setDefaultCurrency(settings.defaultCurrency);
+      }
+    };
+    
+    loadCurrencies();
+  }, [currentUser]);
 
   useEffect(() => {
     const loadTransactions = async () => {
@@ -65,6 +90,14 @@ const Transactions = () => {
       setSortField(field);
       setSortDirection('desc');
     }
+  };
+
+  const convertCurrency = (amount: number, fromCurrency: string): number => {
+    if (fromCurrency === defaultCurrency) return amount;
+    
+    const fromRate = exchangeRates[fromCurrency] || 1;
+    const toRate = exchangeRates[defaultCurrency] || 1;
+    return amount * (toRate / fromRate);
   };
 
   const sortedAndFilteredTransactions = (() => {
@@ -112,6 +145,13 @@ const Transactions = () => {
 
   return (
     <AppLayout title="Transactions">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold hidden sm:block">Transactions</h1>
+        <Badge variant="currency" className="text-sm">
+          Showing in {defaultCurrency}
+        </Badge>
+      </div>
+    
       <div className="flex flex-col-reverse sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <div className="relative w-full sm:w-64">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -173,7 +213,12 @@ const Transactions = () => {
                 {sortedAndFilteredTransactions?.length > 0 ? (
                   sortedAndFilteredTransactions.map((transaction) => {
                     const stock = stocks?.get(transaction.stockId);
-                    const totalValue = transaction.shares * transaction.price;
+                    const originalPrice = transaction.price;
+                    const originalTotal = transaction.shares * originalPrice;
+                    
+                    // Convert to selected currency if needed
+                    const convertedPrice = convertCurrency(originalPrice, transaction.currency);
+                    const convertedTotal = transaction.shares * convertedPrice;
                     
                     return (
                       <TableRow key={transaction.id}>
@@ -192,9 +237,21 @@ const Transactions = () => {
                           </Badge>
                         </TableCell>
                         <TableCell>{transaction.shares}</TableCell>
-                        <TableCell>{transaction.price.toFixed(2)} {transaction.currency}</TableCell>
+                        <TableCell>
+                          {convertedPrice.toFixed(2)} {defaultCurrency}
+                          {transaction.currency !== defaultCurrency && (
+                            <div className="text-xs text-muted-foreground">
+                              Originally: {originalPrice.toFixed(2)} {transaction.currency}
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">
-                          {totalValue.toFixed(2)} {transaction.currency}
+                          {convertedTotal.toFixed(2)} {defaultCurrency}
+                          {transaction.currency !== defaultCurrency && (
+                            <div className="text-xs text-muted-foreground text-right">
+                              Originally: {originalTotal.toFixed(2)} {transaction.currency}
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                     );

@@ -18,7 +18,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { db, Currency } from '@/lib/db';
-import { AlertCircle, RefreshCw, Plus, Save } from 'lucide-react';
+import { AlertCircle, RefreshCw, Plus, Save, BadgeIndianRupee } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { format } from 'date-fns';
@@ -37,6 +37,7 @@ const Settings = () => {
   const [newSymbol, setNewSymbol] = useState('');
   const [newRate, setNewRate] = useState('');
   const [isAddingCurrency, setIsAddingCurrency] = useState(false);
+  const [isPKRAdded, setIsPKRAdded] = useState(false);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -44,6 +45,16 @@ const Settings = () => {
         // Load currencies
         const allCurrencies = await db.currencies.toArray();
         setCurrencies(allCurrencies);
+        
+        // Check if PKR already exists
+        const pkrExists = allCurrencies.some(c => c.code === 'PKR');
+        setIsPKRAdded(pkrExists);
+        
+        // Check for saved settings
+        const settings = await db.settings.where('userId').equals(currentUser?.id || '').first();
+        if (settings?.defaultCurrency) {
+          setDefaultCurrency(settings.defaultCurrency);
+        }
       } catch (error) {
         console.error('Error loading settings:', error);
         toast({
@@ -57,13 +68,82 @@ const Settings = () => {
     };
 
     loadSettings();
-  }, [toast]);
+  }, [toast, currentUser]);
+  
+  const handleAddPKR = async () => {
+    if (isPKRAdded) {
+      toast({
+        title: 'Currency Already Exists',
+        description: 'Pakistani Rupee (PKR) is already in your currencies list',
+      });
+      return;
+    }
+    
+    setIsAddingCurrency(true);
+    try {
+      const pkrCurrency: Currency = {
+        code: 'PKR',
+        name: 'Pakistani Rupee',
+        symbol: '₨',
+        exchangeRate: 278.5, // Example rate as of April 2025
+        lastUpdated: new Date(),
+      };
 
-  const handleSaveSettings = () => {
-    toast({
-      title: 'Settings Saved',
-      description: 'Your preferences have been updated',
-    });
+      // Add to database
+      await db.currencies.add(pkrCurrency);
+
+      // Update local state
+      setCurrencies([...currencies, pkrCurrency]);
+      setIsPKRAdded(true);
+
+      toast({
+        title: 'Currency Added',
+        description: 'Pakistani Rupee (PKR) has been added successfully',
+      });
+    } catch (error) {
+      console.error('Error adding PKR:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to add Pakistani Rupee',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAddingCurrency(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    try {
+      // Get existing settings or create new entry
+      const existingSettings = await db.settings.where('userId').equals(currentUser?.id || '').first();
+      
+      if (existingSettings) {
+        // Update existing settings
+        await db.settings.update(existingSettings.id!, {
+          defaultCurrency,
+          darkMode
+        });
+      } else {
+        // Create new settings
+        await db.settings.add({
+          userId: currentUser?.id,
+          defaultCurrency,
+          darkMode
+        });
+      }
+      
+      toast({
+        title: 'Settings Saved',
+        description: 'Your preferences have been updated',
+      });
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to save settings',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleAddCurrency = async () => {
@@ -210,9 +290,18 @@ const Settings = () => {
             <CardContent className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-medium">Exchange Rates</h3>
-                <Button variant="outline" onClick={handleUpdateRates}>
-                  <RefreshCw className="mr-2 h-4 w-4" /> Update Rates
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={handleAddPKR}
+                    disabled={isPKRAdded || isAddingCurrency}
+                  >
+                    <BadgeIndianRupee className="mr-2 h-4 w-4" /> Add PKR
+                  </Button>
+                  <Button variant="outline" onClick={handleUpdateRates}>
+                    <RefreshCw className="mr-2 h-4 w-4" /> Update Rates
+                  </Button>
+                </div>
               </div>
               
               <Alert>
@@ -236,7 +325,9 @@ const Settings = () => {
                   <TableBody>
                     {currencies.map((currency) => (
                       <TableRow key={currency.code}>
-                        <TableCell className="font-medium">{currency.code}</TableCell>
+                        <TableCell className="font-medium">
+                          <Badge variant="currency">{currency.code}</Badge>
+                        </TableCell>
                         <TableCell>{currency.name}</TableCell>
                         <TableCell>{currency.symbol}</TableCell>
                         <TableCell>{currency.exchangeRate.toFixed(4)}</TableCell>

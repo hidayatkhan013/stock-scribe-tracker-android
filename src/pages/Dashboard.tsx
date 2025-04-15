@@ -4,8 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { db, getPortfolioSummary, getProfitLossReport } from '@/lib/db';
+import { db, getPortfolioSummary, getProfitLossReport, Currency } from '@/lib/db';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Plus } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 
@@ -17,6 +18,31 @@ const Dashboard = () => {
   const [totalInvested, setTotalInvested] = useState<number>(0);
   const [totalProfit, setTotalProfit] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [defaultCurrency, setDefaultCurrency] = useState<string>('USD');
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [exchangeRates, setExchangeRates] = useState<{[key: string]: number}>({});
+
+  useEffect(() => {
+    const loadCurrencies = async () => {
+      const allCurrencies = await db.currencies.toArray();
+      setCurrencies(allCurrencies);
+      
+      // Create exchange rates lookup object
+      const rates: {[key: string]: number} = {};
+      allCurrencies.forEach(curr => {
+        rates[curr.code] = curr.exchangeRate;
+      });
+      setExchangeRates(rates);
+      
+      // Check for default currency in settings
+      const settings = await db.settings.where('userId').equals(currentUser?.id || '').first();
+      if (settings?.defaultCurrency) {
+        setDefaultCurrency(settings.defaultCurrency);
+      }
+    };
+    
+    loadCurrencies();
+  }, [currentUser]);
 
   useEffect(() => {
     const loadDashboardData = async () => {
@@ -25,11 +51,27 @@ const Dashboard = () => {
       try {
         // Get portfolio summary
         const summary = await getPortfolioSummary(currentUser.id);
-        setPortfolioSummary(summary);
+        
+        // Convert all values to the selected currency
+        const convertedSummary = summary.map(item => {
+          const fromRate = exchangeRates[item.stock.currency] || 1;
+          const toRate = exchangeRates[defaultCurrency] || 1;
+          const conversionRate = toRate / fromRate;
+          
+          return {
+            ...item,
+            originalCurrency: item.stock.currency,
+            totalCost: item.totalCost * conversionRate,
+            profitLoss: item.profitLoss * conversionRate,
+            averageCost: item.averageCost * conversionRate
+          };
+        });
+        
+        setPortfolioSummary(convertedSummary);
 
-        // Calculate totals
-        const totalInv = summary.reduce((acc, item) => acc + item.totalCost, 0);
-        const totalPL = summary.reduce((acc, item) => acc + item.profitLoss, 0);
+        // Calculate totals in the selected currency
+        const totalInv = convertedSummary.reduce((acc, item) => acc + item.totalCost, 0);
+        const totalPL = convertedSummary.reduce((acc, item) => acc + item.profitLoss, 0);
         setTotalInvested(totalInv);
         setTotalProfit(totalPL);
 
@@ -45,11 +87,30 @@ const Dashboard = () => {
       }
     };
 
-    loadDashboardData();
-  }, [currentUser]);
+    if (Object.keys(exchangeRates).length > 0) {
+      loadDashboardData();
+    }
+  }, [currentUser, exchangeRates, defaultCurrency]);
+
+  if (isLoading) {
+    return (
+      <AppLayout title="Dashboard">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout title="Dashboard">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">Dashboard Overview</h1>
+        <Badge variant="currency" className="text-sm">
+          Showing in {defaultCurrency}
+        </Badge>
+      </div>
+      
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -58,7 +119,7 @@ const Dashboard = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${totalInvested.toFixed(2)}</div>
+            <div className="text-2xl font-bold">{totalInvested.toFixed(2)} {defaultCurrency}</div>
             <p className="text-xs text-muted-foreground">Across {portfolioSummary.length} stocks</p>
           </CardContent>
         </Card>
@@ -71,7 +132,7 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${totalProfit >= 0 ? 'text-profit' : 'text-loss'}`}>
-              {totalProfit >= 0 ? '+' : ''}{totalProfit.toFixed(2)}
+              {totalProfit >= 0 ? '+' : ''}{totalProfit.toFixed(2)} {defaultCurrency}
             </div>
             <p className="text-xs text-muted-foreground">
               {totalProfit >= 0 ? 'Profit' : 'Loss'} from all transactions
@@ -139,10 +200,17 @@ const Dashboard = () => {
                   <div className="flex justify-between items-center">
                     <CardTitle className="text-lg">{item.stock.ticker}</CardTitle>
                     <span className={`text-sm font-medium ${item.profitLoss >= 0 ? 'text-profit' : 'text-loss'}`}>
-                      {item.profitLoss >= 0 ? '+' : ''}{item.profitLoss.toFixed(2)} {item.stock.currency}
+                      {item.profitLoss >= 0 ? '+' : ''}{item.profitLoss.toFixed(2)} {defaultCurrency}
                     </span>
                   </div>
-                  <CardDescription>{item.stock.name}</CardDescription>
+                  <CardDescription className="flex items-center justify-between">
+                    <span>{item.stock.name}</span>
+                    {item.originalCurrency !== defaultCurrency && (
+                      <Badge variant="outline" className="text-xs">
+                        Originally in {item.originalCurrency}
+                      </Badge>
+                    )}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 gap-2 text-sm">
@@ -152,11 +220,11 @@ const Dashboard = () => {
                     </div>
                     <div>
                       <p className="text-muted-foreground">Avg Cost</p>
-                      <p className="font-medium">{item.averageCost.toFixed(2)} {item.stock.currency}</p>
+                      <p className="font-medium">{item.averageCost.toFixed(2)} {defaultCurrency}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Total Cost</p>
-                      <p className="font-medium">{item.totalCost.toFixed(2)} {item.stock.currency}</p>
+                      <p className="font-medium">{item.totalCost.toFixed(2)} {defaultCurrency}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Return</p>
