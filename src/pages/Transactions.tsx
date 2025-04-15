@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Plus, Search, ArrowUpDown, ArrowDown, ArrowUp } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { db, Transaction, Stock, Currency } from '@/lib/db';
+import { db, Transaction, Stock, Currency, getUserSettings } from '@/lib/db';
 import {
   Table,
   TableBody,
@@ -34,6 +34,8 @@ const Transactions = () => {
 
   useEffect(() => {
     const loadCurrencies = async () => {
+      if (!currentUser?.id) return;
+      
       const allCurrencies = await db.currencies.toArray();
       setCurrencies(allCurrencies);
       
@@ -44,8 +46,8 @@ const Transactions = () => {
       });
       setExchangeRates(rates);
       
-      // Check for default currency in settings
-      const settings = await db.settings.where('userId').equals(currentUser?.id || '').first();
+      // Check for default currency in settings using getUserSettings helper
+      const settings = await getUserSettings(currentUser.id);
       if (settings?.defaultCurrency) {
         setDefaultCurrency(settings.defaultCurrency);
       }

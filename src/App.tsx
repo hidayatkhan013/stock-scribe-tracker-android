@@ -15,14 +15,25 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import NotFound from "./pages/NotFound";
 import { useEffect } from "react";
-import { initializeDatabase } from "@/lib/db";
+import { db, initializeDatabase } from "@/lib/db";
 
 const queryClient = new QueryClient();
 
 const App = () => {
   // Initialize database
   useEffect(() => {
-    initializeDatabase().catch(console.error);
+    const init = async () => {
+      try {
+        // Make sure the database schema is updated
+        await db.open();
+        // Then initialize default data
+        await initializeDatabase();
+      } catch (error) {
+        console.error("Failed to initialize database:", error);
+      }
+    };
+    
+    init();
   }, []);
 
   return (

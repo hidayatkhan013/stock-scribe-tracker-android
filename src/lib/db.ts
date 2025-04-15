@@ -1,4 +1,3 @@
-
 import Dexie, { Table } from 'dexie';
 
 // Define interfaces for our database tables
@@ -38,12 +37,21 @@ export interface Currency {
   lastUpdated: Date;
 }
 
+// New interface for user settings
+export interface Settings {
+  id?: number;
+  userId: number;
+  defaultCurrency: string;
+  darkMode?: boolean;
+}
+
 // Define our database
 class StockScribeDB extends Dexie {
   users!: Table<User, number>;
   stocks!: Table<Stock, number>;
   transactions!: Table<Transaction, number>;
   currencies!: Table<Currency, string>;
+  settings!: Table<Settings, number>; // Add settings table
 
   constructor() {
     super('StockScribeDB');
@@ -54,6 +62,11 @@ class StockScribeDB extends Dexie {
       stocks: '++id, ticker, userId, [userId+ticker]',
       transactions: '++id, stockId, userId, type, date, [userId+date], [stockId+date]',
       currencies: 'code, name'
+    });
+    
+    // Add settings table in version 2
+    this.version(2).stores({
+      settings: '++id, userId'
     });
   }
 }
@@ -344,4 +357,26 @@ export async function getProfitLossReport(userId: number,
     daily: Object.values(dailyProfitLoss).sort((a, b) => a.date.localeCompare(b.date)),
     stocks: Object.values(stockProfitLoss).sort((a, b) => b.net - a.net)
   };
+}
+
+// Get or create user settings
+export async function getUserSettings(userId: number): Promise<Settings> {
+  let settings = await db.settings.where('userId').equals(userId).first();
+  
+  if (!settings) {
+    const id = await db.settings.add({
+      userId,
+      defaultCurrency: 'USD',
+      darkMode: false
+    });
+    
+    settings = {
+      id,
+      userId,
+      defaultCurrency: 'USD',
+      darkMode: false
+    };
+  }
+  
+  return settings;
 }

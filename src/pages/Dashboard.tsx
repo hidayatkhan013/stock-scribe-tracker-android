@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { db, getPortfolioSummary, getProfitLossReport, Currency } from '@/lib/db';
+import { db, getPortfolioSummary, getProfitLossReport, Currency, getUserSettings } from '@/lib/db';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Plus } from 'lucide-react';
@@ -24,6 +24,8 @@ const Dashboard = () => {
 
   useEffect(() => {
     const loadCurrencies = async () => {
+      if (!currentUser?.id) return;
+      
       const allCurrencies = await db.currencies.toArray();
       setCurrencies(allCurrencies);
       
@@ -34,8 +36,8 @@ const Dashboard = () => {
       });
       setExchangeRates(rates);
       
-      // Check for default currency in settings
-      const settings = await db.settings.where('userId').equals(currentUser?.id || '').first();
+      // Check for default currency in settings using getUserSettings helper
+      const settings = await getUserSettings(currentUser.id);
       if (settings?.defaultCurrency) {
         setDefaultCurrency(settings.defaultCurrency);
       }

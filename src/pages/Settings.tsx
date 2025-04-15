@@ -17,7 +17,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { db, Currency } from '@/lib/db';
+import { db, Currency, getUserSettings } from '@/lib/db';
 import { AlertCircle, RefreshCw, Plus, Save, BadgeIndianRupee } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -41,6 +41,8 @@ const Settings = () => {
 
   useEffect(() => {
     const loadSettings = async () => {
+      if (!currentUser?.id) return;
+      
       try {
         // Load currencies
         const allCurrencies = await db.currencies.toArray();
@@ -50,10 +52,13 @@ const Settings = () => {
         const pkrExists = allCurrencies.some(c => c.code === 'PKR');
         setIsPKRAdded(pkrExists);
         
-        // Check for saved settings
-        const settings = await db.settings.where('userId').equals(currentUser?.id || '').first();
+        // Check for saved settings using the getUserSettings helper
+        const settings = await getUserSettings(currentUser.id);
         if (settings?.defaultCurrency) {
           setDefaultCurrency(settings.defaultCurrency);
+        }
+        if (settings?.darkMode !== undefined) {
+          setDarkMode(settings.darkMode);
         }
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -113,20 +118,22 @@ const Settings = () => {
   };
 
   const handleSaveSettings = async () => {
+    if (!currentUser?.id) return;
+    
     try {
-      // Get existing settings or create new entry
-      const existingSettings = await db.settings.where('userId').equals(currentUser?.id || '').first();
+      // Get existing settings
+      const settings = await getUserSettings(currentUser.id);
       
-      if (existingSettings) {
+      if (settings.id) {
         // Update existing settings
-        await db.settings.update(existingSettings.id!, {
+        await db.settings.update(settings.id, {
           defaultCurrency,
           darkMode
         });
       } else {
         // Create new settings
         await db.settings.add({
-          userId: currentUser?.id,
+          userId: currentUser.id,
           defaultCurrency,
           darkMode
         });
