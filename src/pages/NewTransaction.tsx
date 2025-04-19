@@ -1,424 +1,167 @@
-
-import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from '@/components/ui/select';
-import { 
-  Popover, 
-  PopoverContent, 
-  PopoverTrigger 
-} from '@/components/ui/popover';
-import { 
-  Form, 
-  FormControl, 
-  FormDescription, 
-  FormField, 
-  FormItem, 
-  FormLabel, 
-  FormMessage 
-} from '@/components/ui/form';
-import { Textarea } from '@/components/ui/textarea';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
-import { CalendarIcon, TrendingUp, TrendingDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { db, Stock, Transaction, addStock, addTransaction } from '@/lib/db';
+import { CalendarIcon, PlusCircle } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
-import { zodResolver } from '@hookform/resolvers/zod';
-
-// Form schema
-const transactionSchema = z.object({
-  ticker: z.string().min(1, "Ticker is required").max(10),
-  stockName: z.string().min(1, "Stock name is required"),
-  transactionType: z.enum(["buy", "sell"]),
-  shares: z.string().refine(
-    (val) => !isNaN(Number(val)) && Number(val) > 0, 
-    { message: "Must be a positive number" }
-  ),
-  price: z.string().refine(
-    (val) => !isNaN(Number(val)) && Number(val) > 0, 
-    { message: "Must be a positive number" }
-  ),
-  currency: z.string().min(1, "Currency is required"),
-  date: z.date(),
-  notes: z.string().optional(),
-});
-
-type TransactionFormValues = z.infer<typeof transactionSchema>;
+import { Stock, db } from '@/lib/db';
 
 const NewTransaction = () => {
-  const { currentUser } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
+  const { currentUser } = useAuth();
   const { toast } = useToast();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [stocks, setStocks] = useState<Stock[]>([]);
-  const [currencies, setCurrencies] = useState<{ code: string; name: string; symbol: string }[]>([]);
-  
-  // Get transaction type from location state if available
-  const initialTransactionType = location.state?.transactionType || "buy";
-  
-  // Initialize the form
-  const form = useForm<TransactionFormValues>({
-    resolver: zodResolver(transactionSchema),
-    defaultValues: {
-      ticker: "",
-      stockName: "",
-      transactionType: initialTransactionType,
-      shares: "",
-      price: "",
-      currency: "USD",
-      date: new Date(),
-      notes: "",
-    },
-  });
-  
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!currentUser?.id) return;
-      
-      try {
-        // Get user's stocks
-        const userStocks = await db.stocks
-          .where('userId')
-          .equals(currentUser.id)
-          .toArray();
-        setStocks(userStocks);
-        
-        // Get currencies
-        const allCurrencies = await db.currencies.toArray();
-        setCurrencies(allCurrencies);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load data',
-          variant: 'destructive',
-        });
-      }
-    };
-    
-    fetchData();
-  }, [currentUser, toast]);
-  
-  const handleTickerChange = (ticker: string) => {
-    // Auto-fill stock name if we have it in our system
-    const upperTicker = ticker.toUpperCase();
-    form.setValue("ticker", upperTicker);
-    
-    const existingStock = stocks.find(s => s.ticker === upperTicker);
-    if (existingStock) {
-      form.setValue("stockName", existingStock.name);
-      form.setValue("currency", existingStock.currency);
-    }
-  };
-  
-  const onSubmit = async (data: TransactionFormValues) => {
-    if (!currentUser?.id) {
+  const [stock, setStock] = useState<Stock | null>(null);
+  const [quantity, setQuantity] = useState<number>(0);
+  const [price, setPrice] = useState<number>(0);
+  const [date, setDate] = useState<Date>(new Date());
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e: any) => {
+    e.preventDefault();
+
+    if (!currentUser?.id || !stock) {
       toast({
-        title: 'Authentication Error',
-        description: 'You must be logged in',
+        title: 'Error',
+        description: 'Please select a stock and ensure you are logged in.',
         variant: 'destructive',
       });
       return;
     }
-    
-    setIsSubmitting(true);
-    
+
+    setIsLoading(true);
+
     try {
-      // First, make sure the stock exists or create it
-      const stockId = await addStock({
-        ticker: data.ticker,
-        name: data.stockName,
-        currency: data.currency,
+      // Save transaction to database
+      await db.transactions.add({
         userId: currentUser.id,
+        stockId: stock.id,
+        quantity,
+        price,
+        date: date.toISOString(),
       });
-      
-      // Create the transaction
-      await addTransaction({
-        stockId,
-        userId: currentUser.id,
-        type: data.transactionType,
-        shares: Number(data.shares),
-        price: Number(data.price),
-        currency: data.currency,
-        date: data.date,
-        notes: data.notes,
-      });
-      
+
       toast({
         title: 'Success',
-        description: 'Transaction added successfully',
+        description: 'Transaction added successfully!',
       });
-      
+
       navigate('/transactions');
     } catch (error) {
       console.error('Error adding transaction:', error);
       toast({
         title: 'Error',
-        description: 'Failed to add transaction',
+        description: 'Failed to add transaction. Please try again.',
         variant: 'destructive',
       });
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
-  };
-
-  const getTransactionTypeIcon = () => {
-    return form.watch("transactionType") === "buy" ? (
-      <TrendingUp className="h-5 w-5 mr-2 text-primary" />
-    ) : (
-      <TrendingDown className="h-5 w-5 mr-2 text-secondary-foreground" />
-    );
   };
 
   return (
     <AppLayout title="New Transaction">
-      <Card className="max-w-2xl mx-auto shadow-sm hover:shadow-md transition-shadow">
-        <CardHeader>
-          <div className="flex items-center">
-            {getTransactionTypeIcon()}
+      <form onSubmit={handleSubmit} className="max-w-md mx-auto space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Add New Transaction</CardTitle>
+            <CardDescription>Record your stock trade details</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
             <div>
-              <CardTitle>{form.watch("transactionType") === "buy" ? "Buy" : "Sell"} Stock</CardTitle>
-              <CardDescription>Record a new stock transaction</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="ticker"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Ticker Symbol <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., AAPL"
-                          {...field}
-                          onChange={(e) => {
-                            field.onChange(e);
-                            handleTickerChange(e.target.value);
-                          }}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                
-                <FormField
-                  control={form.control}
-                  name="stockName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Company Name <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Apple Inc." {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="transactionType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Transaction Type <span className="text-destructive">*</span></FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select type" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="buy" className="flex items-center">
-                            <TrendingUp className="mr-2 h-4 w-4 inline" /> Buy
-                          </SelectItem>
-                          <SelectItem value="sell" className="flex items-center">
-                            <TrendingDown className="mr-2 h-4 w-4 inline" /> Sell
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                
-                <FormField
-                  control={form.control}
-                  name="date"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>Date <span className="text-destructive">*</span></FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="outline"
-                              className={cn(
-                                "pl-3 text-left font-normal",
-                                !field.value && "text-muted-foreground"
-                              )}
-                            >
-                              {field.value ? (
-                                format(field.value, "MMM dd, yyyy")
-                              ) : (
-                                <span>Pick a date</span>
-                              )}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={field.value}
-                            onSelect={field.onChange}
-                            disabled={(date) =>
-                              date > new Date() || date < new Date("1900-01-01")
-                            }
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <FormField
-                  control={form.control}
-                  name="shares"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Shares <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Number of shares"
-                          type="number"
-                          step="any"
-                          min="0"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                
-                <FormField
-                  control={form.control}
-                  name="price"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Price per Share <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Price"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                
-                <FormField
-                  control={form.control}
-                  name="currency"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Currency <span className="text-destructive">*</span></FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select currency" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {currencies.map((currency) => (
-                            <SelectItem key={currency.code} value={currency.code}>
-                              {currency.code} ({currency.symbol})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              
-              <FormField
-                control={form.control}
-                name="notes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Notes</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Additional notes about this transaction (optional)"
-                        className="resize-none h-20"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+              <Label htmlFor="stock">Stock Ticker</Label>
+              <Input
+                id="stock"
+                type="text"
+                placeholder="Enter stock ticker"
+                value={stock ? stock.ticker : ''}
+                onChange={async (e) => {
+                  const ticker = e.target.value.toUpperCase();
+                  if (ticker) {
+                    const foundStock = await db.stocks.where('ticker').equals(ticker).first();
+                    if (foundStock) {
+                      setStock(foundStock);
+                    } else {
+                      // If stock doesn't exist, create a new one
+                      const newStock = {
+                        ticker: ticker,
+                        name: ticker, // You might want to fetch the actual name from an API
+                        currency: 'USD', // You might want to fetch the actual currency from an API
+                      };
+                      const id = await db.stocks.add(newStock);
+                      const createdStock = await db.stocks.get(id);
+                      setStock(createdStock);
+                    }
+                  } else {
+                    setStock(null);
+                  }
+                }}
               />
-              
-              <div className="flex gap-4 justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => navigate('/transactions')}
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? (
-                    <>
-                      <div className="animate-spin mr-2 h-4 w-4 border-2 border-current border-t-transparent rounded-full"></div>
-                      Saving...
-                    </>
-                  ) : (
-                    `${form.watch("transactionType") === "buy" ? "Buy" : "Sell"} Stock`
-                  )}
-                </Button>
-              </div>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+            </div>
+            <div>
+              <Label htmlFor="quantity">Quantity</Label>
+              <Input
+                id="quantity"
+                type="number"
+                placeholder="Enter quantity"
+                value={quantity}
+                onChange={(e) => setQuantity(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <Label htmlFor="price">Price</Label>
+              <Input
+                id="price"
+                type="number"
+                placeholder="Enter price"
+                value={price}
+                onChange={(e) => setPrice(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <Label>Transaction Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={
+                      "w-[240px] justify-start text-left font-normal" +
+                      (date ? "" : " text-muted-foreground")
+                    }
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {date ? format(date, "PPP") : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={date}
+                    onSelect={setDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <Button disabled={isLoading}>
+              {isLoading ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              ) : (
+                <>
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Add Transaction
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      </form>
     </AppLayout>
   );
 };

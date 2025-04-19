@@ -1,9 +1,8 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { db, getProfitLossReport } from '@/lib/db';
+import { db, getProfitLossReport, getUserSettings } from '@/lib/db';
 import { 
   Select, 
   SelectContent, 
@@ -33,13 +32,41 @@ const Reports = () => {
   const [profitLossData, setProfitLossData] = useState<any>({ daily: [], stocks: [] });
   const [totalProfit, setTotalProfit] = useState(0);
   const [totalLoss, setTotalLoss] = useState(0);
+  const [defaultCurrency, setDefaultCurrency] = useState('USD');
+  const [exchangeRates, setExchangeRates] = useState<{[key: string]: number}>({});
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      if (!currentUser?.id) return;
+      
+      try {
+        // Load currencies
+        const allCurrencies = await db.currencies.toArray();
+        const rates: {[key: string]: number} = {};
+        allCurrencies.forEach(curr => {
+          rates[curr.code] = curr.exchangeRate;
+        });
+        setExchangeRates(rates);
+        
+        // Get user's default currency
+        const settings = await getUserSettings(currentUser.id);
+        if (settings?.defaultCurrency) {
+          setDefaultCurrency(settings.defaultCurrency);
+        }
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      }
+    };
+    
+    loadSettings();
+  }, [currentUser]);
 
   useEffect(() => {
     loadReportData();
-  }, [currentUser, reportType, startDate, endDate]);
+  }, [currentUser, reportType, startDate, endDate, defaultCurrency, exchangeRates]);
 
   const loadReportData = async () => {
-    if (!currentUser?.id) return;
+    if (!currentUser?.id || Object.keys(exchangeRates).length === 0) return;
 
     setIsLoading(true);
     try {
@@ -57,11 +84,51 @@ const Reports = () => {
 
       // Get profit/loss data
       const plReport = await getProfitLossReport(currentUser.id, start, end);
-      setProfitLossData(plReport);
+      
+      // Convert values to default currency
+      const convertedStocks = plReport.stocks.map((item: any) => {
+        const fromRate = exchangeRates[item.stock.currency] || 1;
+        const toRate = exchangeRates[defaultCurrency] || 1;
+        const conversionRate = toRate / fromRate;
+        
+        return {
+          ...item,
+          profit: item.profit * conversionRate,
+          loss: item.loss * conversionRate,
+          net: item.net * conversionRate,
+          originalCurrency: item.stock.currency
+        };
+      });
 
-      // Calculate totals
-      const profit = plReport.stocks.reduce((sum: number, item: any) => sum + item.profit, 0);
-      const loss = plReport.stocks.reduce((sum: number, item: any) => sum + item.loss, 0);
+      const convertedDaily = plReport.daily.map((day: any) => {
+        const convertedEntries = Object.entries(day.currencies || {}).reduce((acc: any, [currency, value]: [string, any]) => {
+          const fromRate = exchangeRates[currency] || 1;
+          const toRate = exchangeRates[defaultCurrency] || 1;
+          const conversionRate = toRate / fromRate;
+          acc[currency] = {
+            profit: value.profit * conversionRate,
+            loss: value.loss * conversionRate,
+          };
+          return acc;
+        }, {});
+
+        return {
+          ...day,
+          currencies: convertedEntries,
+          profit: Object.values(convertedEntries).reduce((sum: number, curr: any) => sum + curr.profit, 0),
+          loss: Object.values(convertedEntries).reduce((sum: number, curr: any) => sum + curr.loss, 0),
+          net: Object.values(convertedEntries).reduce((sum: number, curr: any) => sum + (curr.profit - curr.loss), 0)
+        };
+      });
+
+      setProfitLossData({
+        stocks: convertedStocks,
+        daily: convertedDaily
+      });
+
+      // Calculate totals in default currency
+      const profit = convertedStocks.reduce((sum: number, item: any) => sum + item.profit, 0);
+      const loss = convertedStocks.reduce((sum: number, item: any) => sum + item.loss, 0);
       setTotalProfit(profit);
       setTotalLoss(loss);
     } catch (error) {
@@ -83,6 +150,7 @@ const Reports = () => {
     });
   };
 
+  // Update currency displays in JSX to use defaultCurrency instead of hardcoded USD
   return (
     <AppLayout title="Reports">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
@@ -158,7 +226,7 @@ const Reports = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-profit">${totalProfit.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-profit">{defaultCurrency} {totalProfit.toFixed(2)}</div>
           </CardContent>
         </Card>
         
@@ -170,7 +238,7 @@ const Reports = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-loss">${totalLoss.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-loss">{defaultCurrency} {totalLoss.toFixed(2)}</div>
           </CardContent>
         </Card>
         
@@ -183,7 +251,7 @@ const Reports = () => {
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${totalProfit - totalLoss >= 0 ? 'text-profit' : 'text-loss'}`}>
-              ${(totalProfit - totalLoss).toFixed(2)}
+              {defaultCurrency} {(totalProfit - totalLoss).toFixed(2)}
             </div>
           </CardContent>
         </Card>
@@ -205,7 +273,7 @@ const Reports = () => {
                       <span className="text-sm text-muted-foreground">{item.stock.name}</span>
                     </div>
                     <div className={`font-medium ${item.net >= 0 ? 'text-profit' : 'text-loss'}`}>
-                      {item.net >= 0 ? '+' : ''}{item.net.toFixed(2)} {item.stock.currency}
+                      {item.net >= 0 ? '+' : ''}{item.net.toFixed(2)} {defaultCurrency}
                     </div>
                   </div>
                 ))}
@@ -234,11 +302,11 @@ const Reports = () => {
                     <div className="flex items-center gap-4">
                       <div>
                         <span className="text-xs text-muted-foreground">Profit</span>
-                        <div className="text-sm text-profit">${day.profit.toFixed(2)}</div>
+                        <div className="text-sm text-profit">{defaultCurrency} {day.profit.toFixed(2)}</div>
                       </div>
                       <div>
                         <span className="text-xs text-muted-foreground">Loss</span>
-                        <div className="text-sm text-loss">${day.loss.toFixed(2)}</div>
+                        <div className="text-sm text-loss">{defaultCurrency} {day.loss.toFixed(2)}</div>
                       </div>
                       <div className={`font-medium ${day.net >= 0 ? 'text-profit' : 'text-loss'}`}>
                         {day.net >= 0 ? '+' : ''}{day.net.toFixed(2)}

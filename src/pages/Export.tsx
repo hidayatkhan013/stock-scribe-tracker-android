@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
@@ -38,7 +37,16 @@ const Export = () => {
     dataType: string;
     date: Date;
     fileName: string;
+    data: any[];
   }[]>([]);
+
+  const handleHistoryClick = (fileName: string, type: string, data: any[]) => {
+    if (type === 'PDF') {
+      downloadPDF(data, fileName.replace('.pdf', ''));
+    } else {
+      downloadCSV(data, fileName.replace('.csv', ''));
+    }
+  };
 
   const handleExport = async () => {
     if (!currentUser?.id) {
@@ -56,7 +64,6 @@ const Export = () => {
       let data: any = [];
       let fileName = `stockscribe-${dataType}-${format(new Date(), 'yyyy-MM-dd')}`;
       
-      // Fetch appropriate data based on the selected data type
       if (dataType === 'all' || dataType === 'transactions') {
         const transactions = await getTransactionsForUser(currentUser.id);
         const filteredTransactions = transactions.filter(tx => {
@@ -101,21 +108,20 @@ const Export = () => {
         }
       }
       
-      // Generate the appropriate file format
       if (exportType === 'csv') {
         downloadCSV(data, fileName);
       } else {
         downloadPDF(data, fileName);
       }
       
-      // Add to export history
       const newExportHistory = [
         ...exportHistory,
         {
           type: exportType.toUpperCase(),
           dataType: dataType,
           date: new Date(),
-          fileName: `${fileName}.${exportType}`
+          fileName: `${fileName}.${exportType}`,
+          data: data
         }
       ];
       setExportHistory(newExportHistory);
@@ -137,7 +143,6 @@ const Export = () => {
   };
   
   const downloadCSV = (data: any[], fileName: string) => {
-    // Handle empty data
     if (!data.length) {
       toast({
         title: 'No Data',
@@ -148,21 +153,15 @@ const Export = () => {
     }
     
     try {
-      // Get headers from the first object's keys
       const headers = Object.keys(data[0]);
       
-      // Create CSV content
       let csvContent = headers.join(',') + '\n';
       
-      // Add data rows
       data.forEach(item => {
         const row = headers.map(header => {
-          // Handle objects, arrays, and other complex types
-          const value = item[header];
           if (typeof value === 'object' && value !== null) {
             return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
           }
-          // Handle strings with commas
           if (typeof value === 'string' && value.includes(',')) {
             return `"${value}"`;
           }
@@ -171,17 +170,14 @@ const Export = () => {
         csvContent += row + '\n';
       });
       
-      // Create a Blob and download link
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       
-      // Create download URL
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
       link.setAttribute('download', `${fileName}.csv`);
       link.style.visibility = 'hidden';
       
-      // Append to body, click, and remove
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -196,7 +192,6 @@ const Export = () => {
   };
   
   const downloadPDF = (data: any[], fileName: string) => {
-    // Handle empty data
     if (!data.length) {
       toast({
         title: 'No Data',
@@ -209,7 +204,6 @@ const Export = () => {
     try {
       const headers = Object.keys(data[0]);
       
-      // Clean and prepare data for display
       const cleanedData = data.map(item => {
         const cleanedItem: any = {};
         headers.forEach(header => {
@@ -224,7 +218,6 @@ const Export = () => {
         return cleanedItem;
       });
       
-      // Create a Blob with HTML content
       const htmlContent = `
         <html>
           <head>
@@ -262,17 +255,14 @@ const Export = () => {
         </html>
       `;
       
-      // Create a blob from the HTML content
       const blob = new Blob([htmlContent], { type: 'text/html' });
       
-      // Create downloadable PDF
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = `${fileName}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
     } catch (error) {
       console.error('PDF generation error:', error);
       toast({
@@ -429,14 +419,18 @@ const Export = () => {
             {exportHistory.length > 0 ? (
               <div className="space-y-4">
                 {exportHistory.map((export_, index) => (
-                  <div key={index} className="flex justify-between items-center border-b pb-2">
+                  <div 
+                    key={index} 
+                    className="flex justify-between items-center border-b pb-2 hover:bg-accent/5 cursor-pointer p-2 rounded-md transition-colors"
+                    onClick={() => handleHistoryClick(export_.fileName, export_.type, export_.data)}
+                  >
                     <div>
                       <p className="font-medium">{export_.fileName}</p>
                       <p className="text-sm text-muted-foreground">
                         {format(export_.date, "MMM dd, yyyy HH:mm")} - {export_.dataType}
                       </p>
                     </div>
-                    <Badge variant="outline">{export_.type}</Badge>
+                    <Badge variant="outline" className="hover:bg-primary/10">{export_.type}</Badge>
                   </div>
                 ))}
               </div>
