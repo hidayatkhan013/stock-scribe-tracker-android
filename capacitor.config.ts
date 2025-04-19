@@ -5,10 +5,6 @@ const config: CapacitorConfig = {
   appId: 'app.lovable.4775eb3e5fe440799e367f745d70d84b',
   appName: 'stock-scribe-tracker-android',
   webDir: 'dist',
-  server: {
-    url: 'https://4775eb3e-5fe4-4079-9e36-7f745d70d84b.lovableproject.com?forceHideBadge=true',
-    cleartext: true
-  },
   android: {
     buildOptions: {
       keystorePath: null,
