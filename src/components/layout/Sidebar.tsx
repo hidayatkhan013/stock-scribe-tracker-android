@@ -14,12 +14,12 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Menu } from "lucide-react";
-import { useMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const Sidebar = () => {
   const location = useLocation();
   const { logout } = useAuth();
-  const isMobile = useMobile();
+  const isMobile = useIsMobile();
   
   const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },

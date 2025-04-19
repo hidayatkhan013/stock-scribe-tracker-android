@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/use-toast';
 import { Save } from 'lucide-react';
-import { Currency, getUserSettings } from '@/lib/db';
+import { Currency, getUserSettings, db } from '@/lib/db';
 
 interface GeneralSettingsProps {
   currencies: Currency[];
