@@ -83,10 +83,20 @@ const Export = () => {
         const reports = await getProfitLossReport(currentUser.id, startDate, endDate);
         if (dataType === 'all' || dataType === 'summaries') {
           if (reports.daily.length) {
-            data.push(...reports.daily);
+            data.push(...reports.daily.map(day => ({
+              ...day,
+              date: format(new Date(day.date), 'yyyy-MM-dd')
+            })));
           }
           if (reports.stocks.length) {
-            data.push(...reports.stocks);
+            data.push(...reports.stocks.map(stock => ({
+              ticker: stock.stock.ticker,
+              name: stock.stock.name,
+              profit: stock.profit,
+              loss: stock.loss,
+              netProfit: stock.net,
+              currency: stock.stock.currency
+            })));
           }
         }
       }
@@ -186,9 +196,6 @@ const Export = () => {
   };
   
   const downloadPDF = (data: any[], fileName: string) => {
-    // Since we can't easily generate PDFs in the browser without a library,
-    // we'll create a simple HTML table and use the browser's print functionality
-    
     // Handle empty data
     if (!data.length) {
       toast({
@@ -202,19 +209,23 @@ const Export = () => {
     try {
       const headers = Object.keys(data[0]);
       
-      // Create a new window
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        toast({
-          title: 'Export Error',
-          description: 'Please allow pop-ups for this site to export as PDF.',
-          variant: 'destructive',
+      // Clean and prepare data for display
+      const cleanedData = data.map(item => {
+        const cleanedItem: any = {};
+        headers.forEach(header => {
+          if (item[header] === undefined || item[header] === null) {
+            cleanedItem[header] = '';
+          } else if (typeof item[header] === 'object') {
+            cleanedItem[header] = JSON.stringify(item[header]);
+          } else {
+            cleanedItem[header] = item[header];
+          }
         });
-        return;
-      }
+        return cleanedItem;
+      });
       
-      // Generate HTML content
-      printWindow.document.write(`
+      // Create a Blob with HTML content
+      const htmlContent = `
         <html>
           <head>
             <title>${fileName}</title>
@@ -237,15 +248,9 @@ const Export = () => {
                 </tr>
               </thead>
               <tbody>
-                ${data.map(row => `
+                ${cleanedData.map(row => `
                   <tr>
-                    ${headers.map(header => {
-                      const value = row[header];
-                      if (typeof value === 'object' && value !== null) {
-                        return `<td>${JSON.stringify(value)}</td>`;
-                      }
-                      return `<td>${value}</td>`;
-                    }).join('')}
+                    ${headers.map(header => `<td>${row[header]}</td>`).join('')}
                   </tr>
                 `).join('')}
               </tbody>
@@ -255,17 +260,19 @@ const Export = () => {
             </div>
           </body>
         </html>
-      `);
+      `;
       
-      // Wait for content to be loaded
-      printWindow.document.close();
-      printWindow.focus();
+      // Create a blob from the HTML content
+      const blob = new Blob([htmlContent], { type: 'text/html' });
       
-      // Use timeout to ensure content is loaded
-      setTimeout(() => {
-        printWindow.print();
-        // The user can save as PDF from the print dialog
-      }, 500);
+      // Create downloadable PDF
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${fileName}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
     } catch (error) {
       console.error('PDF generation error:', error);
       toast({
@@ -279,7 +286,7 @@ const Export = () => {
   return (
     <AppLayout title="Export Data">
       <div className="max-w-2xl mx-auto">
-        <Card>
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
           <CardHeader>
             <CardTitle>Export Your Data</CardTitle>
             <CardDescription>
@@ -293,7 +300,7 @@ const Export = () => {
                 value={exportType}
                 onValueChange={(value: 'csv' | 'pdf') => setExportType(value)}
               >
-                <SelectTrigger id="exportType">
+                <SelectTrigger id="exportType" className="border border-input rounded-md">
                   <SelectValue placeholder="Select format" />
                 </SelectTrigger>
                 <SelectContent>
@@ -324,7 +331,7 @@ const Export = () => {
                 value={dataType}
                 onValueChange={(value: 'all' | 'transactions' | 'portfolio' | 'summaries') => setDataType(value)}
               >
-                <SelectTrigger id="dataType">
+                <SelectTrigger id="dataType" className="border border-input rounded-md">
                   <SelectValue placeholder="Select data" />
                 </SelectTrigger>
                 <SelectContent>
@@ -411,7 +418,7 @@ const Export = () => {
           </CardContent>
         </Card>
 
-        <Card className="mt-6">
+        <Card className="mt-6 shadow-sm hover:shadow-md transition-shadow">
           <CardHeader>
             <CardTitle>Export History</CardTitle>
             <CardDescription>

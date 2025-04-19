@@ -8,6 +8,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import Dashboard from "./pages/Dashboard";
 import Transactions from "./pages/Transactions";
 import NewTransaction from "./pages/NewTransaction";
+import Portfolio from "./pages/Portfolio";
 import Reports from "./pages/Reports";
 import Export from "./pages/Export";
 import Settings from "./pages/Settings";
@@ -79,6 +80,7 @@ const App = () => {
               <Route path="/register" element={<Register />} />
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/transactions/new" element={<NewTransaction />} />
+              <Route path="/portfolio" element={<Portfolio />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/export" element={<Export />} />
               <Route path="/settings" element={<Settings />} />

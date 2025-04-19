@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Search, ArrowUpDown, ArrowDown, ArrowUp } from 'lucide-react';
+import { Search, ArrowUpDown, ArrowDown, ArrowUp, TrendingUp, TrendingDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { db, Transaction, Stock, Currency, getUserSettings } from '@/lib/db';
 import {
@@ -102,6 +102,10 @@ const Transactions = () => {
     return amount * (toRate / fromRate);
   };
 
+  const navigateToNewTransaction = (type: 'buy' | 'sell') => {
+    navigate('/transactions/new', { state: { transactionType: type } });
+  };
+
   const sortedAndFilteredTransactions = (() => {
     // Filter transactions
     let filtered = transactions;
@@ -164,12 +168,25 @@ const Transactions = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <Button onClick={() => navigate('/transactions/new')}>
-          <Plus className="mr-2 h-4 w-4" /> Add Transaction
-        </Button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Button 
+            onClick={() => navigateToNewTransaction('buy')}
+            className="flex-1 sm:flex-auto"
+            variant="default"
+          >
+            <TrendingUp className="mr-2 h-4 w-4" /> Buy Stock
+          </Button>
+          <Button 
+            onClick={() => navigateToNewTransaction('sell')}
+            className="flex-1 sm:flex-auto"
+            variant="secondary"
+          >
+            <TrendingDown className="mr-2 h-4 w-4" /> Sell Stock
+          </Button>
+        </div>
       </div>
 
-      <Card>
+      <Card className="shadow-sm">
         <CardContent className="p-0">
           <div className="rounded-md border">
             <Table>
@@ -262,14 +279,23 @@ const Transactions = () => {
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-10">
                       <div className="flex flex-col items-center justify-center text-muted-foreground">
-                        <p className="mb-2">No transactions found</p>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => navigate('/transactions/new')}
-                        >
-                          <Plus className="mr-2 h-4 w-4" /> Add your first transaction
-                        </Button>
+                        <p className="mb-4">No transactions found</p>
+                        <div className="flex gap-2">
+                          <Button 
+                            variant="default" 
+                            size="sm" 
+                            onClick={() => navigateToNewTransaction('buy')}
+                          >
+                            <TrendingUp className="mr-2 h-4 w-4" /> Buy Stock
+                          </Button>
+                          <Button 
+                            variant="secondary" 
+                            size="sm" 
+                            onClick={() => navigateToNewTransaction('sell')}
+                          >
+                            <TrendingDown className="mr-2 h-4 w-4" /> Sell Stock
+                          </Button>
+                        </div>
                       </div>
                     </TableCell>
                   </TableRow>

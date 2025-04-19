@@ -19,7 +19,7 @@ import {
   PopoverTrigger 
 } from '@/components/ui/popover';
 import { format, subDays, subMonths, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
-import { CalendarIcon, Download } from 'lucide-react';
+import { CalendarIcon, Download, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -150,27 +150,36 @@ const Reports = () => {
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <Card>
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Profit</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center">
+              <DollarSign className="h-4 w-4 mr-1 text-green-500" />
+              Total Profit
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-profit">${totalProfit.toFixed(2)}</div>
           </CardContent>
         </Card>
         
-        <Card>
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Loss</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center">
+              <DollarSign className="h-4 w-4 mr-1 text-red-500" />
+              Total Loss
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-loss">${totalLoss.toFixed(2)}</div>
           </CardContent>
         </Card>
         
-        <Card>
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Net Profit/Loss</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center">
+              <DollarSign className="h-4 w-4 mr-1" />
+              Net Profit/Loss
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${totalProfit - totalLoss >= 0 ? 'text-profit' : 'text-loss'}`}>
@@ -181,7 +190,7 @@ const Reports = () => {
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
           <CardHeader>
             <CardTitle>Performance by Stock</CardTitle>
             <CardDescription>Profit and loss breakdown by stock</CardDescription>
@@ -209,7 +218,7 @@ const Reports = () => {
           </CardContent>
         </Card>
         
-        <Card>
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
           <CardHeader>
             <CardTitle>Daily Performance</CardTitle>
             <CardDescription>Profit and loss by day</CardDescription>

@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { format } from 'date-fns';
-import { CalendarIcon } from 'lucide-react';
+import { CalendarIcon, TrendingUp, TrendingDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { db, Stock, Transaction, addStock, addTransaction } from '@/lib/db';
 import { useToast } from '@/components/ui/use-toast';
@@ -62,10 +62,14 @@ type TransactionFormValues = z.infer<typeof transactionSchema>;
 const NewTransaction = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [currencies, setCurrencies] = useState<{ code: string; name: string; symbol: string }[]>([]);
+  
+  // Get transaction type from location state if available
+  const initialTransactionType = location.state?.transactionType || "buy";
   
   // Initialize the form
   const form = useForm<TransactionFormValues>({
@@ -73,7 +77,7 @@ const NewTransaction = () => {
     defaultValues: {
       ticker: "",
       stockName: "",
-      transactionType: "buy",
+      transactionType: initialTransactionType,
       shares: "",
       price: "",
       currency: "USD",
@@ -173,12 +177,25 @@ const NewTransaction = () => {
     }
   };
 
+  const getTransactionTypeIcon = () => {
+    return form.watch("transactionType") === "buy" ? (
+      <TrendingUp className="h-5 w-5 mr-2 text-primary" />
+    ) : (
+      <TrendingDown className="h-5 w-5 mr-2 text-secondary-foreground" />
+    );
+  };
+
   return (
     <AppLayout title="New Transaction">
-      <Card className="max-w-2xl mx-auto">
+      <Card className="max-w-2xl mx-auto shadow-sm hover:shadow-md transition-shadow">
         <CardHeader>
-          <CardTitle>Add Transaction</CardTitle>
-          <CardDescription>Record a new stock transaction</CardDescription>
+          <div className="flex items-center">
+            {getTransactionTypeIcon()}
+            <div>
+              <CardTitle>{form.watch("transactionType") === "buy" ? "Buy" : "Sell"} Stock</CardTitle>
+              <CardDescription>Record a new stock transaction</CardDescription>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -237,8 +254,12 @@ const NewTransaction = () => {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="buy">Buy</SelectItem>
-                          <SelectItem value="sell">Sell</SelectItem>
+                          <SelectItem value="buy" className="flex items-center">
+                            <TrendingUp className="mr-2 h-4 w-4 inline" /> Buy
+                          </SelectItem>
+                          <SelectItem value="sell" className="flex items-center">
+                            <TrendingDown className="mr-2 h-4 w-4 inline" /> Sell
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -390,7 +411,7 @@ const NewTransaction = () => {
                       Saving...
                     </>
                   ) : (
-                    'Add Transaction'
+                    `${form.watch("transactionType") === "buy" ? "Buy" : "Sell"} Stock`
                   )}
                 </Button>
               </div>
