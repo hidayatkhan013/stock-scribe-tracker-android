@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
@@ -159,13 +160,14 @@ const Export = () => {
       
       data.forEach(item => {
         const row = headers.map(header => {
-          if (typeof value === 'object' && value !== null) {
-            return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
+          const cellValue = item[header];
+          if (typeof cellValue === 'object' && cellValue !== null) {
+            return `"${JSON.stringify(cellValue).replace(/"/g, '""')}"`;
           }
-          if (typeof value === 'string' && value.includes(',')) {
-            return `"${value}"`;
+          if (typeof cellValue === 'string' && cellValue.includes(',')) {
+            return `"${cellValue}"`;
           }
-          return value;
+          return cellValue;
         }).join(',');
         csvContent += row + '\n';
       });
@@ -257,6 +259,7 @@ const Export = () => {
       
       const blob = new Blob([htmlContent], { type: 'text/html' });
       
+      // Create a download link instead of opening in browser
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = `${fileName}.pdf`;

@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -44,7 +45,7 @@ const NewTransaction = () => {
         stockId: stock.id,
         quantity,
         price,
-        date: date.toISOString(),
+        date, // Using Date object directly
       });
 
       toast({
@@ -88,11 +89,12 @@ const NewTransaction = () => {
                     if (foundStock) {
                       setStock(foundStock);
                     } else {
-                      // If stock doesn't exist, create a new one
+                      // If stock doesn't exist, create a new one with userId
                       const newStock = {
                         ticker: ticker,
                         name: ticker, // You might want to fetch the actual name from an API
                         currency: 'USD', // You might want to fetch the actual currency from an API
+                        userId: currentUser?.id || 0, // Add the required userId property
                       };
                       const id = await db.stocks.add(newStock);
                       const createdStock = await db.stocks.get(id);
@@ -143,7 +145,7 @@ const NewTransaction = () => {
                   <Calendar
                     mode="single"
                     selected={date}
-                    onSelect={setDate}
+                    onSelect={(newDate) => newDate && setDate(newDate)}
                     initialFocus
                   />
                 </PopoverContent>
