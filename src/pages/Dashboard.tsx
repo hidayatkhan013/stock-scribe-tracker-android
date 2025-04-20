@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,6 +7,7 @@ import { db, getPortfolioSummary, getProfitLossReport, Currency, getUserSettings
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Plus, TrendingUp, TrendingDown } from 'lucide-react';
+import { subDays } from 'date-fns';
 
 const Dashboard = () => {
   const { currentUser } = useAuth();
