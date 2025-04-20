@@ -98,15 +98,25 @@ const Export = () => {
           }
           if (reports.stocks.length) {
             data.push(...reports.stocks.map(stock => ({
-              ticker: stock.stock.ticker,
-              name: stock.stock.name,
+              ticker: stock.stock?.ticker || 'Unknown',
+              name: stock.stock?.name || 'Unknown Stock',
               profit: stock.profit,
               loss: stock.loss,
               netProfit: stock.net,
-              currency: stock.stock.currency
+              currency: stock.stock?.currency || 'USD'
             })));
           }
         }
+      }
+      
+      if (data.length === 0) {
+        toast({
+          title: 'No Data',
+          description: 'There is no data to export for the selected period and type.',
+          variant: 'destructive',
+        });
+        setIsLoading(false);
+        return;
       }
       
       if (exportType === 'csv') {
@@ -154,13 +164,21 @@ const Export = () => {
     }
     
     try {
-      const headers = Object.keys(data[0]);
+      // Ensure all objects have the same keys by taking a union of all keys
+      const allKeys = new Set<string>();
+      data.forEach(item => {
+        Object.keys(item).forEach(key => allKeys.add(key));
+      });
+      
+      const headers = Array.from(allKeys);
       
       let csvContent = headers.join(',') + '\n';
       
       data.forEach(item => {
         const row = headers.map(header => {
-          const cellValue = item[header];
+          const cellValue = item[header] !== undefined ? item[header] : '';
+          if (cellValue === null) return '';
+          
           if (typeof cellValue === 'object' && cellValue !== null) {
             return `"${JSON.stringify(cellValue).replace(/"/g, '""')}"`;
           }
@@ -173,16 +191,32 @@ const Export = () => {
       });
       
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
       
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `${fileName}.csv`);
-      link.style.visibility = 'hidden';
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // Special handling for Android platform
+      if (window.navigator && window.navigator.userAgent && window.navigator.userAgent.includes('Android')) {
+        // For Android, create a download link that opens in a new tab
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${fileName}.csv`;
+        link.target = '_blank'; // Open in new tab for Android
+        link.click();
+        
+        // Display instructions for Android users
+        toast({
+          title: 'CSV Downloaded',
+          description: 'The file has been downloaded. You can find it in your downloads folder.',
+        });
+      } else {
+        // For web browsers
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${fileName}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     } catch (error) {
       console.error('CSV generation error:', error);
       toast({
@@ -204,7 +238,13 @@ const Export = () => {
     }
     
     try {
-      const headers = Object.keys(data[0]);
+      // Ensure all objects have the same keys by taking a union of all keys
+      const allKeys = new Set<string>();
+      data.forEach(item => {
+        Object.keys(item).forEach(key => allKeys.add(key));
+      });
+      
+      const headers = Array.from(allKeys);
       
       const cleanedData = data.map(item => {
         const cleanedItem: any = {};
@@ -221,9 +261,11 @@ const Export = () => {
       });
       
       const htmlContent = `
+        <!DOCTYPE html>
         <html>
           <head>
             <title>${fileName}</title>
+            <meta charset="utf-8">
             <style>
               body { font-family: Arial, sans-serif; }
               table { width: 100%; border-collapse: collapse; margin-top: 20px; }
@@ -259,13 +301,26 @@ const Export = () => {
       
       const blob = new Blob([htmlContent], { type: 'text/html' });
       
-      // Create a download link instead of opening in browser
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `${fileName}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // Special handling for Android platform
+      if (window.navigator && window.navigator.userAgent && window.navigator.userAgent.includes('Android')) {
+        // For Android, create a download link that opens in a new tab
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${fileName}.pdf`;
+        a.target = '_blank'; // Open in new tab for Android
+        a.click();
+        
+        // Display instructions for Android users
+        toast({
+          title: 'PDF Downloaded',
+          description: 'The file has been downloaded. You can find it in your downloads folder.',
+        });
+      } else {
+        // For web browsers, open the PDF directly in a new tab
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      }
     } catch (error) {
       console.error('PDF generation error:', error);
       toast({

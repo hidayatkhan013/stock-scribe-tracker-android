@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
@@ -144,10 +145,121 @@ const Reports = () => {
   };
 
   const handleExportCSV = () => {
-    toast({
-      title: 'Coming Soon',
-      description: 'The export feature will be available in a future update',
-    });
+    if (!currentUser?.id) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please log in to export data',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      const fileName = `stockscribe-report-${format(new Date(), 'yyyy-MM-dd')}`;
+      
+      // Prepare data for export
+      const data = [];
+      
+      // Add stock data
+      if (profitLossData.stocks && profitLossData.stocks.length) {
+        data.push(...profitLossData.stocks.map((item: any) => ({
+          type: 'Stock',
+          name: item.stock?.name || 'Unknown',
+          ticker: item.stock?.ticker || 'Unknown',
+          profit: item.profit,
+          loss: item.loss,
+          net: item.net,
+          currency: defaultCurrency,
+          originalCurrency: item.stock?.currency || defaultCurrency
+        })));
+      }
+      
+      // Add daily data
+      if (profitLossData.daily && profitLossData.daily.length) {
+        data.push(...profitLossData.daily.map((day: any) => ({
+          type: 'Daily',
+          date: format(new Date(day.date), 'yyyy-MM-dd'),
+          profit: day.profit,
+          loss: day.loss,
+          net: day.net,
+          currency: defaultCurrency
+        })));
+      }
+      
+      if (data.length === 0) {
+        toast({
+          title: 'No Data',
+          description: 'There is no data to export for the selected period.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      
+      // Generate CSV
+      const allKeys = new Set<string>();
+      data.forEach(item => {
+        Object.keys(item).forEach(key => allKeys.add(key));
+      });
+      
+      const headers = Array.from(allKeys);
+      let csvContent = headers.join(',') + '\n';
+      
+      data.forEach(item => {
+        const row = headers.map(header => {
+          const cellValue = item[header] !== undefined ? item[header] : '';
+          if (cellValue === null) return '';
+          
+          if (typeof cellValue === 'object' && cellValue !== null) {
+            return `"${JSON.stringify(cellValue).replace(/"/g, '""')}"`;
+          }
+          if (typeof cellValue === 'string' && cellValue.includes(',')) {
+            return `"${cellValue}"`;
+          }
+          return cellValue;
+        }).join(',');
+        csvContent += row + '\n';
+      });
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      
+      // Special handling for Android platform
+      if (window.navigator && window.navigator.userAgent && window.navigator.userAgent.includes('Android')) {
+        // For Android, create a download link that opens in a new tab
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${fileName}.csv`;
+        link.target = '_blank'; // Open in new tab for Android
+        link.click();
+        
+        // Display instructions for Android users
+        toast({
+          title: 'CSV Downloaded',
+          description: 'The file has been downloaded. You can find it in your downloads folder.',
+        });
+      } else {
+        // For web browsers
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${fileName}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      
+      toast({
+        title: 'Export Successful',
+        description: `Your report has been exported as ${fileName}.csv`,
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast({
+        title: 'Export Failed',
+        description: 'There was a problem exporting your data. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
