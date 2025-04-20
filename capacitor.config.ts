@@ -11,7 +11,12 @@ const config: CapacitorConfig = {
       keystoreAlias: null,
       keystorePassword: null,
       keystoreAliasPassword: null,
-    }
+    },
+    // Add Android permissions
+    permissions: [
+      "android.permission.READ_EXTERNAL_STORAGE",
+      "android.permission.WRITE_EXTERNAL_STORAGE"
+    ]
   }
 };
 

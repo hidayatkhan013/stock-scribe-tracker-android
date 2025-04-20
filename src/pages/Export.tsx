@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
@@ -24,6 +23,7 @@ import { CalendarIcon, FileText, FileDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { db, getTransactionsForUser, getPortfolioSummary, getProfitLossReport } from '@/lib/db';
+import { downloadCSV, downloadPDF } from '@/utils/fileUtils';
 
 const Export = () => {
   const { currentUser } = useAuth();
@@ -72,40 +72,34 @@ const Export = () => {
           return txDate >= startDate && txDate <= endDate;
         });
         
-        if (dataType === 'all' || dataType === 'transactions') {
-          data.push(...filteredTransactions.map(tx => ({
-            ...tx,
-            date: format(new Date(tx.date), 'yyyy-MM-dd'),
-          })));
-        }
+        data.push(...filteredTransactions.map(tx => ({
+          ...tx,
+          date: format(new Date(tx.date), 'yyyy-MM-dd'),
+        })));
       }
       
       if (dataType === 'all' || dataType === 'portfolio') {
         const portfolio = await getPortfolioSummary(currentUser.id);
-        if (dataType === 'all' || dataType === 'portfolio') {
-          data.push(...portfolio);
-        }
+        data.push(...portfolio);
       }
       
       if (dataType === 'all' || dataType === 'summaries') {
         const reports = await getProfitLossReport(currentUser.id, startDate, endDate);
-        if (dataType === 'all' || dataType === 'summaries') {
-          if (reports.daily.length) {
-            data.push(...reports.daily.map(day => ({
-              ...day,
-              date: format(new Date(day.date), 'yyyy-MM-dd')
-            })));
-          }
-          if (reports.stocks.length) {
-            data.push(...reports.stocks.map(stock => ({
-              ticker: stock.stock?.ticker || 'Unknown',
-              name: stock.stock?.name || 'Unknown Stock',
-              profit: stock.profit,
-              loss: stock.loss,
-              netProfit: stock.net,
-              currency: stock.stock?.currency || 'USD'
-            })));
-          }
+        if (reports.daily.length) {
+          data.push(...reports.daily.map(day => ({
+            ...day,
+            date: format(new Date(day.date), 'yyyy-MM-dd')
+          })));
+        }
+        if (reports.stocks.length) {
+          data.push(...reports.stocks.map(stock => ({
+            ticker: stock.stock?.ticker || 'Unknown',
+            name: stock.stock?.name || 'Unknown Stock',
+            profit: stock.profit,
+            loss: stock.loss,
+            netProfit: stock.net,
+            currency: stock.stock?.currency || 'USD'
+          })));
         }
       }
       
@@ -119,28 +113,31 @@ const Export = () => {
         return;
       }
       
+      let exportSuccess = false;
       if (exportType === 'csv') {
-        downloadCSV(data, fileName);
+        exportSuccess = await downloadCSV(data, fileName);
       } else {
-        downloadPDF(data, fileName);
+        exportSuccess = await downloadPDF(data, fileName);
       }
       
-      const newExportHistory = [
-        ...exportHistory,
-        {
-          type: exportType.toUpperCase(),
-          dataType: dataType,
-          date: new Date(),
-          fileName: `${fileName}.${exportType}`,
-          data: data
-        }
-      ];
-      setExportHistory(newExportHistory);
-      
-      toast({
-        title: 'Export Successful',
-        description: `Your data has been exported as ${fileName}.${exportType}`,
-      });
+      if (exportSuccess) {
+        const newExportHistory = [
+          ...exportHistory,
+          {
+            type: exportType.toUpperCase(),
+            dataType: dataType,
+            date: new Date(),
+            fileName: `${fileName}.${exportType}`,
+            data: data
+          }
+        ];
+        setExportHistory(newExportHistory);
+        
+        toast({
+          title: 'Export Successful',
+          description: `Your data has been exported as ${fileName}.${exportType}`,
+        });
+      }
     } catch (error) {
       console.error('Export error:', error);
       toast({
@@ -150,184 +147,6 @@ const Export = () => {
       });
     } finally {
       setIsLoading(false);
-    }
-  };
-  
-  const downloadCSV = (data: any[], fileName: string) => {
-    if (!data.length) {
-      toast({
-        title: 'No Data',
-        description: 'There is no data to export for the selected period and type.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    try {
-      // Ensure all objects have the same keys by taking a union of all keys
-      const allKeys = new Set<string>();
-      data.forEach(item => {
-        Object.keys(item).forEach(key => allKeys.add(key));
-      });
-      
-      const headers = Array.from(allKeys);
-      
-      let csvContent = headers.join(',') + '\n';
-      
-      data.forEach(item => {
-        const row = headers.map(header => {
-          const cellValue = item[header] !== undefined ? item[header] : '';
-          if (cellValue === null) return '';
-          
-          if (typeof cellValue === 'object' && cellValue !== null) {
-            return `"${JSON.stringify(cellValue).replace(/"/g, '""')}"`;
-          }
-          if (typeof cellValue === 'string' && cellValue.includes(',')) {
-            return `"${cellValue}"`;
-          }
-          return cellValue;
-        }).join(',');
-        csvContent += row + '\n';
-      });
-      
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      
-      // Special handling for Android platform
-      if (window.navigator && window.navigator.userAgent && window.navigator.userAgent.includes('Android')) {
-        // For Android, create a download link that opens in a new tab
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${fileName}.csv`;
-        link.target = '_blank'; // Open in new tab for Android
-        link.click();
-        
-        // Display instructions for Android users
-        toast({
-          title: 'CSV Downloaded',
-          description: 'The file has been downloaded. You can find it in your downloads folder.',
-        });
-      } else {
-        // For web browsers
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${fileName}.csv`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-    } catch (error) {
-      console.error('CSV generation error:', error);
-      toast({
-        title: 'Export Error',
-        description: 'Could not generate CSV file. Please try again.',
-        variant: 'destructive',
-      });
-    }
-  };
-  
-  const downloadPDF = (data: any[], fileName: string) => {
-    if (!data.length) {
-      toast({
-        title: 'No Data',
-        description: 'There is no data to export for the selected period and type.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    try {
-      // Ensure all objects have the same keys by taking a union of all keys
-      const allKeys = new Set<string>();
-      data.forEach(item => {
-        Object.keys(item).forEach(key => allKeys.add(key));
-      });
-      
-      const headers = Array.from(allKeys);
-      
-      const cleanedData = data.map(item => {
-        const cleanedItem: any = {};
-        headers.forEach(header => {
-          if (item[header] === undefined || item[header] === null) {
-            cleanedItem[header] = '';
-          } else if (typeof item[header] === 'object') {
-            cleanedItem[header] = JSON.stringify(item[header]);
-          } else {
-            cleanedItem[header] = item[header];
-          }
-        });
-        return cleanedItem;
-      });
-      
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>${fileName}</title>
-            <meta charset="utf-8">
-            <style>
-              body { font-family: Arial, sans-serif; }
-              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-              th { background-color: #f2f2f2; }
-              h1 { text-align: center; }
-              .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #666; }
-            </style>
-          </head>
-          <body>
-            <h1>StockScribe - ${dataType.charAt(0).toUpperCase() + dataType.slice(1)} Export</h1>
-            <p>Date Range: ${format(startDate, 'MMM dd, yyyy')} to ${format(endDate, 'MMM dd, yyyy')}</p>
-            <table>
-              <thead>
-                <tr>
-                  ${headers.map(header => `<th>${header}</th>`).join('')}
-                </tr>
-              </thead>
-              <tbody>
-                ${cleanedData.map(row => `
-                  <tr>
-                    ${headers.map(header => `<td>${row[header]}</td>`).join('')}
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-            <div class="footer">
-              Generated by StockScribe on ${format(new Date(), 'MMM dd, yyyy, HH:mm')}
-            </div>
-          </body>
-        </html>
-      `;
-      
-      const blob = new Blob([htmlContent], { type: 'text/html' });
-      
-      // Special handling for Android platform
-      if (window.navigator && window.navigator.userAgent && window.navigator.userAgent.includes('Android')) {
-        // For Android, create a download link that opens in a new tab
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${fileName}.pdf`;
-        a.target = '_blank'; // Open in new tab for Android
-        a.click();
-        
-        // Display instructions for Android users
-        toast({
-          title: 'PDF Downloaded',
-          description: 'The file has been downloaded. You can find it in your downloads folder.',
-        });
-      } else {
-        // For web browsers, open the PDF directly in a new tab
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
-      }
-    } catch (error) {
-      console.error('PDF generation error:', error);
-      toast({
-        title: 'Export Error',
-        description: 'Could not generate PDF file. Please try again.',
-        variant: 'destructive',
-      });
     }
   };
 

@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
@@ -22,6 +21,7 @@ import { format, subDays, subMonths, startOfMonth, endOfMonth, isSameDay } from 
 import { CalendarIcon, Download, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
+import { downloadCSV } from '@/utils/fileUtils';
 
 const Reports = () => {
   const { currentUser } = useAuth();
@@ -41,7 +41,6 @@ const Reports = () => {
       if (!currentUser?.id) return;
       
       try {
-        // Load currencies
         const allCurrencies = await db.currencies.toArray();
         const rates: {[key: string]: number} = {};
         allCurrencies.forEach(curr => {
@@ -49,7 +48,6 @@ const Reports = () => {
         });
         setExchangeRates(rates);
         
-        // Get user's default currency
         const settings = await getUserSettings(currentUser.id);
         if (settings?.defaultCurrency) {
           setDefaultCurrency(settings.defaultCurrency);
@@ -74,7 +72,6 @@ const Reports = () => {
       let start = startDate;
       let end = endDate;
 
-      // Adjust date range based on report type
       if (reportType === 'daily') {
         start = subDays(new Date(), 30);
         end = new Date();
@@ -83,10 +80,8 @@ const Reports = () => {
         end = endOfMonth(new Date());
       }
 
-      // Get profit/loss data
       const plReport = await getProfitLossReport(currentUser.id, start, end);
       
-      // Convert values to default currency
       const convertedStocks = plReport.stocks.map((item: any) => {
         const fromRate = exchangeRates[item.stock.currency] || 1;
         const toRate = exchangeRates[defaultCurrency] || 1;
@@ -127,7 +122,6 @@ const Reports = () => {
         daily: convertedDaily
       });
 
-      // Calculate totals in default currency
       const profit = convertedStocks.reduce((sum: number, item: any) => sum + item.profit, 0);
       const loss = convertedStocks.reduce((sum: number, item: any) => sum + item.loss, 0);
       setTotalProfit(profit);
@@ -144,7 +138,7 @@ const Reports = () => {
     }
   };
 
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
     if (!currentUser?.id) {
       toast({
         title: 'Authentication Required',
@@ -157,10 +151,8 @@ const Reports = () => {
     try {
       const fileName = `stockscribe-report-${format(new Date(), 'yyyy-MM-dd')}`;
       
-      // Prepare data for export
       const data = [];
       
-      // Add stock data
       if (profitLossData.stocks && profitLossData.stocks.length) {
         data.push(...profitLossData.stocks.map((item: any) => ({
           type: 'Stock',
@@ -174,7 +166,6 @@ const Reports = () => {
         })));
       }
       
-      // Add daily data
       if (profitLossData.daily && profitLossData.daily.length) {
         data.push(...profitLossData.daily.map((day: any) => ({
           type: 'Daily',
@@ -195,63 +186,14 @@ const Reports = () => {
         return;
       }
       
-      // Generate CSV
-      const allKeys = new Set<string>();
-      data.forEach(item => {
-        Object.keys(item).forEach(key => allKeys.add(key));
-      });
+      const exportSuccess = await downloadCSV(data, fileName);
       
-      const headers = Array.from(allKeys);
-      let csvContent = headers.join(',') + '\n';
-      
-      data.forEach(item => {
-        const row = headers.map(header => {
-          const cellValue = item[header] !== undefined ? item[header] : '';
-          if (cellValue === null) return '';
-          
-          if (typeof cellValue === 'object' && cellValue !== null) {
-            return `"${JSON.stringify(cellValue).replace(/"/g, '""')}"`;
-          }
-          if (typeof cellValue === 'string' && cellValue.includes(',')) {
-            return `"${cellValue}"`;
-          }
-          return cellValue;
-        }).join(',');
-        csvContent += row + '\n';
-      });
-      
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      
-      // Special handling for Android platform
-      if (window.navigator && window.navigator.userAgent && window.navigator.userAgent.includes('Android')) {
-        // For Android, create a download link that opens in a new tab
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${fileName}.csv`;
-        link.target = '_blank'; // Open in new tab for Android
-        link.click();
-        
-        // Display instructions for Android users
+      if (exportSuccess) {
         toast({
-          title: 'CSV Downloaded',
-          description: 'The file has been downloaded. You can find it in your downloads folder.',
+          title: 'Export Successful',
+          description: `Your report has been exported as ${fileName}.csv`,
         });
-      } else {
-        // For web browsers
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${fileName}.csv`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
       }
-      
-      toast({
-        title: 'Export Successful',
-        description: `Your report has been exported as ${fileName}.csv`,
-      });
     } catch (error) {
       console.error('Export error:', error);
       toast({

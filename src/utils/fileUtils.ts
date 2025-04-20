@@ -1,0 +1,198 @@
+
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Toast } from '@capacitor/toast';
+
+/**
+ * Detects if the application is running on an Android device
+ */
+export const isAndroid = (): boolean => {
+  return window.navigator && 
+    window.navigator.userAgent && 
+    window.navigator.userAgent.includes('Android');
+};
+
+/**
+ * Checks if the Capacitor runtime is available (running as native app)
+ */
+export const isCapacitorNative = (): boolean => {
+  return typeof (window as any).Capacitor !== 'undefined' && 
+    (window as any).Capacitor.isNativePlatform();
+};
+
+/**
+ * Downloads a CSV file
+ * @param data Data to be saved to CSV
+ * @param fileName Name of the file without extension
+ */
+export const downloadCSV = async (data: any[], fileName: string): Promise<boolean> => {
+  if (!data.length) {
+    return false;
+  }
+  
+  try {
+    // Ensure all objects have the same keys by taking a union of all keys
+    const allKeys = new Set<string>();
+    data.forEach(item => {
+      Object.keys(item).forEach(key => allKeys.add(key));
+    });
+    
+    const headers = Array.from(allKeys);
+    let csvContent = headers.join(',') + '\n';
+    
+    data.forEach(item => {
+      const row = headers.map(header => {
+        const cellValue = item[header] !== undefined ? item[header] : '';
+        if (cellValue === null) return '';
+        
+        if (typeof cellValue === 'object' && cellValue !== null) {
+          return `"${JSON.stringify(cellValue).replace(/"/g, '""')}"`;
+        }
+        if (typeof cellValue === 'string' && cellValue.includes(',')) {
+          return `"${cellValue}"`;
+        }
+        return cellValue;
+      }).join(',');
+      csvContent += row + '\n';
+    });
+    
+    // For Android native app, use Capacitor Filesystem
+    if (isAndroid() && isCapacitorNative()) {
+      try {
+        const result = await Filesystem.writeFile({
+          path: `${fileName}.csv`,
+          data: csvContent,
+          directory: Directory.Documents,
+          encoding: 'utf8',
+        });
+        
+        await Toast.show({
+          text: `File saved to Documents/${fileName}.csv`,
+          duration: 'long'
+        });
+        
+        return true;
+      } catch (error) {
+        console.error('Android file write error:', error);
+        throw error;
+      }
+    } else {
+      // For web browser
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${fileName}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return true;
+    }
+  } catch (error) {
+    console.error('CSV generation error:', error);
+    return false;
+  }
+};
+
+/**
+ * Downloads a PDF file
+ * @param data Data to be saved to PDF
+ * @param fileName Name of the file without extension
+ */
+export const downloadPDF = async (data: any[], fileName: string): Promise<boolean> => {
+  if (!data.length) {
+    return false;
+  }
+  
+  try {
+    // Ensure all objects have the same keys by taking a union of all keys
+    const allKeys = new Set<string>();
+    data.forEach(item => {
+      Object.keys(item).forEach(key => allKeys.add(key));
+    });
+    
+    const headers = Array.from(allKeys);
+    
+    const cleanedData = data.map(item => {
+      const cleanedItem: any = {};
+      headers.forEach(header => {
+        if (item[header] === undefined || item[header] === null) {
+          cleanedItem[header] = '';
+        } else if (typeof item[header] === 'object') {
+          cleanedItem[header] = JSON.stringify(item[header]);
+        } else {
+          cleanedItem[header] = item[header];
+        }
+      });
+      return cleanedItem;
+    });
+    
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${fileName}</title>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; }
+            h1 { text-align: center; }
+            .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <h1>StockScribe - Export</h1>
+          <table>
+            <thead>
+              <tr>
+                ${headers.map(header => `<th>${header}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${cleanedData.map(row => `
+                <tr>
+                  ${headers.map(header => `<td>${row[header]}</td>`).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="footer">
+            Generated by StockScribe on ${new Date().toLocaleDateString()}
+          </div>
+        </body>
+      </html>
+    `;
+    
+    // For Android native app, use Capacitor Filesystem
+    if (isAndroid() && isCapacitorNative()) {
+      try {
+        const result = await Filesystem.writeFile({
+          path: `${fileName}.html`,
+          data: htmlContent,
+          directory: Directory.Documents,
+          encoding: 'utf8',
+        });
+        
+        await Toast.show({
+          text: `File saved to Documents/${fileName}.html`,
+          duration: 'long'
+        });
+        
+        return true;
+      } catch (error) {
+        console.error('Android file write error:', error);
+        throw error;
+      }
+    } else {
+      // For web browsers, open the PDF directly in a new tab
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      return true;
+    }
+  } catch (error) {
+    console.error('PDF generation error:', error);
+    return false;
+  }
+};
