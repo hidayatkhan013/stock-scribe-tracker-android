@@ -1,5 +1,4 @@
-
-import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Toast } from '@capacitor/toast';
 
 /**
@@ -62,7 +61,7 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
           path: `${fileName}.csv`,
           data: csvContent,
           directory: Directory.Documents,
-          encoding: 'utf8',
+          encoding: Encoding.UTF8
         });
         
         await Toast.show({
@@ -171,7 +170,7 @@ export const downloadPDF = async (data: any[], fileName: string): Promise<boolea
           path: `${fileName}.html`,
           data: htmlContent,
           directory: Directory.Documents,
-          encoding: 'utf8',
+          encoding: Encoding.UTF8
         });
         
         await Toast.show({
