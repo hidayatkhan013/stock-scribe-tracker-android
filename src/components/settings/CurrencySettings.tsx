@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,9 +24,63 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
   const [newName, setNewName] = useState('');
   const [newSymbol, setNewSymbol] = useState('');
   const [newRate, setNewRate] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [isPKRAdded, setIsPKRAdded] = useState(
     currencies.some(c => c.code === 'PKR')
   );
+
+  // Add functionality to fetch exchange rates from an internet source
+  const fetchExchangeRates = async () => {
+    setIsLoading(true);
+    try {
+      // Fetch latest exchange rates from an API
+      const response = await fetch('https://open.er-api.com/v6/latest/USD');
+      if (!response.ok) {
+        throw new Error('Failed to fetch currency rates');
+      }
+      
+      const data = await response.json();
+      
+      if (data.rates) {
+        // Update existing currencies with the latest rates
+        const updatedCurrencies: Currency[] = [];
+        
+        for (const currency of currencies) {
+          if (data.rates[currency.code]) {
+            // Update rate
+            await db.currencies.update(currency.code, {
+              exchangeRate: data.rates[currency.code],
+              lastUpdated: new Date()
+            });
+            
+            updatedCurrencies.push({
+              ...currency,
+              exchangeRate: data.rates[currency.code],
+              lastUpdated: new Date()
+            });
+          } else {
+            updatedCurrencies.push(currency);
+          }
+        }
+        
+        setCurrencies(updatedCurrencies);
+        
+        toast({
+          title: 'Exchange Rates Updated',
+          description: 'Currency rates have been updated with the latest values',
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching exchange rates:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update exchange rates. Please try again later.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleAddPKR = async () => {
     if (isPKRAdded) {
@@ -39,6 +93,36 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
     
     setIsAddingCurrency(true);
     try {
+      // Try to get real-time exchange rate for PKR
+      try {
+        const response = await fetch('https://open.er-api.com/v6/latest/USD');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.rates && data.rates.PKR) {
+            const pkrCurrency: Currency = {
+              code: 'PKR',
+              name: 'Pakistani Rupee',
+              symbol: '₨',
+              exchangeRate: data.rates.PKR,
+              lastUpdated: new Date(),
+            };
+            
+            await db.currencies.add(pkrCurrency);
+            setCurrencies([...currencies, pkrCurrency]);
+            setIsPKRAdded(true);
+            
+            toast({
+              title: 'Currency Added',
+              description: 'Pakistani Rupee (PKR) has been added successfully with current exchange rate',
+            });
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching PKR rate:', error);
+      }
+      
+      // Fallback to default rate if API call fails
       const pkrCurrency: Currency = {
         code: 'PKR',
         name: 'Pakistani Rupee',
@@ -99,11 +183,26 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
 
     setIsAddingCurrency(true);
     try {
+      // Try to get real-time exchange rate for the currency
+      let finalRate = rateValue;
+      try {
+        const response = await fetch(`https://open.er-api.com/v6/latest/USD`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.rates && data.rates[newCode.toUpperCase()]) {
+            finalRate = data.rates[newCode.toUpperCase()];
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching rate:', error);
+        // Use the manually entered rate as fallback
+      }
+      
       const newCurrency: Currency = {
         code: newCode.toUpperCase(),
         name: newName,
         symbol: newSymbol,
-        exchangeRate: rateValue,
+        exchangeRate: finalRate,
         lastUpdated: new Date(),
       };
 
@@ -131,13 +230,6 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
     }
   };
 
-  const handleUpdateRates = () => {
-    toast({
-      title: 'Coming Soon',
-      description: 'Automatic currency rate updates will be available in a future update',
-    });
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -157,8 +249,13 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
             >
               <BadgeIndianRupee className="mr-2 h-4 w-4" /> Add PKR
             </Button>
-            <Button variant="outline" onClick={handleUpdateRates}>
-              <RefreshCw className="mr-2 h-4 w-4" /> Update Rates
+            <Button 
+              variant="outline" 
+              onClick={fetchExchangeRates}
+              disabled={isLoading}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /> 
+              {isLoading ? 'Updating...' : 'Update Rates'}
             </Button>
           </div>
         </div>
@@ -166,7 +263,7 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            Exchange rates are updated manually. Base currency is USD.
+            Exchange rates are updated from open.er-api.com. Base currency is USD.
           </AlertDescription>
         </Alert>
         
@@ -191,7 +288,7 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
                   <TableCell>{currency.symbol}</TableCell>
                   <TableCell>{currency.exchangeRate.toFixed(4)}</TableCell>
                   <TableCell>
-                    {format(new Date(currency.lastUpdated), 'MMM dd, yyyy')}
+                    {format(new Date(currency.lastUpdated), 'MMM dd, yyyy HH:mm')}
                   </TableCell>
                 </TableRow>
               ))}

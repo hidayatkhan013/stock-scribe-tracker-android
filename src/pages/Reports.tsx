@@ -150,7 +150,6 @@ const Reports = () => {
     });
   };
 
-  // Update currency displays in JSX to use defaultCurrency instead of hardcoded USD
   return (
     <AppLayout title="Reports">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">

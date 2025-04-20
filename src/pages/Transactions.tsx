@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -179,7 +178,7 @@ const Transactions = () => {
           <Button 
             onClick={() => navigateToNewTransaction('sell')}
             className="flex-1 sm:flex-auto"
-            variant="secondary"
+            variant="destructive"
           >
             <TrendingDown className="mr-2 h-4 w-4" /> Sell Stock
           </Button>
@@ -251,7 +250,7 @@ const Transactions = () => {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={transaction.type === 'buy' ? 'outline' : 'secondary'}>
+                          <Badge variant={transaction.type === 'buy' ? 'default' : 'destructive'}>
                             {transaction.type.toUpperCase()}
                           </Badge>
                         </TableCell>
@@ -289,7 +288,7 @@ const Transactions = () => {
                             <TrendingUp className="mr-2 h-4 w-4" /> Buy Stock
                           </Button>
                           <Button 
-                            variant="secondary" 
+                            variant="destructive" 
                             size="sm" 
                             onClick={() => navigateToNewTransaction('sell')}
                           >

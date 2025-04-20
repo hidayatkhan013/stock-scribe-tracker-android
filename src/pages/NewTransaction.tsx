@@ -1,6 +1,6 @@
 
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,21 +10,45 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
-import { CalendarIcon, PlusCircle } from 'lucide-react';
+import { CalendarIcon, TrendingUp, TrendingDown } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import { Stock, db } from '@/lib/db';
+import { Stock, db, getUserSettings } from '@/lib/db';
 
 const NewTransaction = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const [stock, setStock] = useState<Stock | null>(null);
-  const [quantity, setQuantity] = useState<number>(0);
+  const [shares, setShares] = useState<number>(0);
   const [price, setPrice] = useState<number>(0);
   const [date, setDate] = useState<Date>(new Date());
   const [isLoading, setIsLoading] = useState(false);
+  const [transactionType, setTransactionType] = useState<'buy' | 'sell'>('buy');
+  const [currency, setCurrency] = useState<string>('USD');
+  
+  // Get transaction type from location state, if available
+  useEffect(() => {
+    if (location.state?.transactionType) {
+      setTransactionType(location.state.transactionType);
+    }
+  }, [location.state]);
+  
+  // Load user's default currency
+  useEffect(() => {
+    const loadDefaultCurrency = async () => {
+      if (currentUser?.id) {
+        const settings = await getUserSettings(currentUser.id);
+        if (settings?.defaultCurrency) {
+          setCurrency(settings.defaultCurrency);
+        }
+      }
+    };
+    
+    loadDefaultCurrency();
+  }, [currentUser]);
 
-  const handleSubmit = async (e: any) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!currentUser?.id || !stock) {
@@ -43,9 +67,12 @@ const NewTransaction = () => {
       await db.transactions.add({
         userId: currentUser.id,
         stockId: stock.id,
-        quantity,
-        price,
-        date, // Using Date object directly
+        type: transactionType, // Set transaction type (buy/sell)
+        shares: shares,
+        price: price,
+        currency: currency,
+        date: date,
+        notes: ''
       });
 
       toast({
@@ -67,11 +94,11 @@ const NewTransaction = () => {
   };
 
   return (
-    <AppLayout title="New Transaction">
+    <AppLayout title={`${transactionType === 'buy' ? 'Buy' : 'Sell'} Stock`}>
       <form onSubmit={handleSubmit} className="max-w-md mx-auto space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Add New Transaction</CardTitle>
+            <CardTitle>{transactionType === 'buy' ? 'Buy' : 'Sell'} Stock</CardTitle>
             <CardDescription>Record your stock trade details</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -93,8 +120,8 @@ const NewTransaction = () => {
                       const newStock = {
                         ticker: ticker,
                         name: ticker, // You might want to fetch the actual name from an API
-                        currency: 'USD', // You might want to fetch the actual currency from an API
-                        userId: currentUser?.id || 0, // Add the required userId property
+                        currency: currency, // Use user's default currency
+                        userId: currentUser?.id || 0
                       };
                       const id = await db.stocks.add(newStock);
                       const createdStock = await db.stocks.get(id);
@@ -107,13 +134,13 @@ const NewTransaction = () => {
               />
             </div>
             <div>
-              <Label htmlFor="quantity">Quantity</Label>
+              <Label htmlFor="shares">Shares</Label>
               <Input
-                id="quantity"
+                id="shares"
                 type="number"
-                placeholder="Enter quantity"
-                value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
+                placeholder="Enter number of shares"
+                value={shares}
+                onChange={(e) => setShares(Number(e.target.value))}
               />
             </div>
             <div>
@@ -151,13 +178,21 @@ const NewTransaction = () => {
                 </PopoverContent>
               </Popover>
             </div>
-            <Button disabled={isLoading}>
+            <Button 
+              type="submit" 
+              disabled={isLoading}
+              variant={transactionType === 'buy' ? 'default' : 'destructive'}
+            >
               {isLoading ? (
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
               ) : (
                 <>
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  Add Transaction
+                  {transactionType === 'buy' ? (
+                    <TrendingUp className="mr-2 h-4 w-4" />
+                  ) : (
+                    <TrendingDown className="mr-2 h-4 w-4" />
+                  )}
+                  {transactionType === 'buy' ? 'Buy' : 'Sell'} Stock
                 </>
               )}
             </Button>
