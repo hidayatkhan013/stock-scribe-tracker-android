@@ -20,6 +20,7 @@ const NewTransaction = () => {
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const [stock, setStock] = useState<Stock | null>(null);
+  const [stockInput, setStockInput] = useState<string>('');
   const [shares, setShares] = useState<number>(0);
   const [price, setPrice] = useState<number>(0);
   const [date, setDate] = useState<Date>(new Date());
@@ -93,6 +94,39 @@ const NewTransaction = () => {
     }
   };
 
+  const handleTickerChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target.value;
+    setStockInput(input);
+    
+    if (!input) {
+      setStock(null);
+      return;
+    }
+    
+    // Convert to uppercase only if input exists
+    const ticker = input.toUpperCase();
+    
+    if (ticker && currentUser?.id) {
+      const foundStock = await db.stocks.where('ticker').equals(ticker).first();
+      if (foundStock) {
+        setStock(foundStock);
+      } else {
+        // If stock doesn't exist, create a new one with userId
+        const newStock: Stock = {
+          ticker: ticker,
+          name: ticker, // You might want to fetch the actual name from an API
+          currency: currency, // Use user's default currency
+          userId: currentUser.id
+        };
+        const id = await db.stocks.add(newStock);
+        const createdStock = await db.stocks.get(id);
+        if (createdStock) {
+          setStock(createdStock);
+        }
+      }
+    }
+  };
+
   return (
     <AppLayout title={`${transactionType === 'buy' ? 'Buy' : 'Sell'} Stock`}>
       <form onSubmit={handleSubmit} className="max-w-md mx-auto space-y-6">
@@ -108,29 +142,8 @@ const NewTransaction = () => {
                 id="stock"
                 type="text"
                 placeholder="Enter stock ticker"
-                value={stock ? stock.ticker : ''}
-                onChange={async (e) => {
-                  const ticker = e.target.value.toUpperCase();
-                  if (ticker) {
-                    const foundStock = await db.stocks.where('ticker').equals(ticker).first();
-                    if (foundStock) {
-                      setStock(foundStock);
-                    } else {
-                      // If stock doesn't exist, create a new one with userId
-                      const newStock = {
-                        ticker: ticker,
-                        name: ticker, // You might want to fetch the actual name from an API
-                        currency: currency, // Use user's default currency
-                        userId: currentUser?.id || 0
-                      };
-                      const id = await db.stocks.add(newStock);
-                      const createdStock = await db.stocks.get(id);
-                      setStock(createdStock);
-                    }
-                  } else {
-                    setStock(null);
-                  }
-                }}
+                value={stockInput}
+                onChange={handleTickerChange}
               />
             </div>
             <div>

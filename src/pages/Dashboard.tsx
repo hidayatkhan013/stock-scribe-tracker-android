@@ -7,8 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { db, getPortfolioSummary, getProfitLossReport, Currency, getUserSettings } from '@/lib/db';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus } from 'lucide-react';
-import { format, subDays } from 'date-fns';
+import { Plus, TrendingUp, TrendingDown } from 'lucide-react';
 
 const Dashboard = () => {
   const { currentUser } = useAuth();
@@ -56,13 +55,24 @@ const Dashboard = () => {
         
         // Convert all values to the selected currency
         const convertedSummary = summary.map(item => {
-          const fromRate = exchangeRates[item.stock.currency] || 1;
+          if (!item.stock) {
+            return {
+              ...item,
+              originalCurrency: defaultCurrency,
+              totalCost: 0,
+              profitLoss: 0,
+              averageCost: 0
+            };
+          }
+          
+          const stockCurrency = item.stock.currency || defaultCurrency;
+          const fromRate = exchangeRates[stockCurrency] || 1;
           const toRate = exchangeRates[defaultCurrency] || 1;
           const conversionRate = toRate / fromRate;
           
           return {
             ...item,
-            originalCurrency: item.stock.currency,
+            originalCurrency: stockCurrency,
             totalCost: item.totalCost * conversionRate,
             profitLoss: item.profitLoss * conversionRate,
             averageCost: item.averageCost * conversionRate
@@ -162,9 +172,22 @@ const Dashboard = () => {
       <div className="mt-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">Recent Performance</h2>
-          <Button size="sm" onClick={() => navigate('/transactions/new')}>
-            <Plus className="mr-1 h-4 w-4" /> Add Transaction
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              size="sm" 
+              onClick={() => navigate('/transactions/new', { state: { transactionType: 'buy' } })}
+              variant="default"
+            >
+              <TrendingUp className="mr-1 h-4 w-4" /> Buy Stock
+            </Button>
+            <Button 
+              size="sm" 
+              onClick={() => navigate('/transactions/new', { state: { transactionType: 'sell' } })}
+              variant="destructive"
+            >
+              <TrendingDown className="mr-1 h-4 w-4" /> Sell Stock
+            </Button>
+          </div>
         </div>
         <Card>
           <CardHeader>
@@ -179,13 +202,20 @@ const Dashboard = () => {
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                 <p>No transaction data available</p>
-                <Button 
-                  variant="link" 
-                  className="mt-2"
-                  onClick={() => navigate('/transactions/new')}
-                >
-                  Add your first transaction
-                </Button>
+                <div className="flex gap-2 mt-2">
+                  <Button 
+                    variant="default" 
+                    onClick={() => navigate('/transactions/new', { state: { transactionType: 'buy' } })}
+                  >
+                    <TrendingUp className="mr-2 h-4 w-4" /> Buy Stock
+                  </Button>
+                  <Button 
+                    variant="destructive" 
+                    onClick={() => navigate('/transactions/new', { state: { transactionType: 'sell' } })}
+                  >
+                    <TrendingDown className="mr-2 h-4 w-4" /> Sell Stock
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
@@ -197,16 +227,16 @@ const Dashboard = () => {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {portfolioSummary.length > 0 ? (
             portfolioSummary.map((item) => (
-              <Card key={`portfolio-${item.stock.id}`}>
+              <Card key={`portfolio-${item.stock?.id || 'unknown'}`}>
                 <CardHeader className="pb-2">
                   <div className="flex justify-between items-center">
-                    <CardTitle className="text-lg">{item.stock.ticker}</CardTitle>
+                    <CardTitle className="text-lg">{item.stock?.ticker || 'Unknown'}</CardTitle>
                     <span className={`text-sm font-medium ${item.profitLoss >= 0 ? 'text-profit' : 'text-loss'}`}>
                       {item.profitLoss >= 0 ? '+' : ''}{item.profitLoss.toFixed(2)} {defaultCurrency}
                     </span>
                   </div>
                   <CardDescription className="flex items-center justify-between">
-                    <span>{item.stock.name}</span>
+                    <span>{item.stock?.name || 'Unknown Stock'}</span>
                     {item.originalCurrency !== defaultCurrency && (
                       <Badge variant="outline" className="text-xs">
                         Originally in {item.originalCurrency}
@@ -244,9 +274,20 @@ const Dashboard = () => {
             <Card className="col-span-full">
               <CardContent className="flex flex-col items-center justify-center py-8">
                 <p className="text-muted-foreground mb-4">Your portfolio is empty</p>
-                <Button onClick={() => navigate('/transactions/new')}>
-                  <Plus className="mr-2 h-4 w-4" /> Add Your First Stock
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    onClick={() => navigate('/transactions/new', { state: { transactionType: 'buy' } })}
+                    variant="default"
+                  >
+                    <TrendingUp className="mr-2 h-4 w-4" /> Buy Stock
+                  </Button>
+                  <Button 
+                    onClick={() => navigate('/transactions/new', { state: { transactionType: 'sell' } })}
+                    variant="destructive"
+                  >
+                    <TrendingDown className="mr-2 h-4 w-4" /> Sell Stock
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}
