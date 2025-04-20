@@ -1,3 +1,4 @@
+
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
@@ -19,4 +20,14 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      // Externalize Capacitor plugins to prevent build errors
+      external: [
+        '@capacitor/core',
+        '@capacitor/filesystem',
+        '@capacitor/toast'
+      ]
+    }
+  }
 }));

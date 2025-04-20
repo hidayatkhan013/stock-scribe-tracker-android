@@ -1,5 +1,22 @@
-import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
-import { Toast } from '@capacitor/toast';
+
+// Use dynamic imports for Capacitor modules to prevent build issues
+// These types are just for TypeScript and won't be included in the final bundle
+type FilesystemPlugin = {
+  writeFile: (options: {
+    path: string;
+    data: string;
+    directory: any;
+    encoding: any;
+  }) => Promise<any>;
+};
+
+type ToastPlugin = {
+  show: (options: { text: string; duration: string }) => Promise<void>;
+};
+
+type CapacitorGlobal = {
+  isNativePlatform: () => boolean;
+};
 
 /**
  * Detects if the application is running on an Android device
@@ -16,6 +33,34 @@ export const isAndroid = (): boolean => {
 export const isCapacitorNative = (): boolean => {
   return typeof (window as any).Capacitor !== 'undefined' && 
     (window as any).Capacitor.isNativePlatform();
+};
+
+// Function to dynamically load Capacitor Filesystem plugin
+const getFilesystem = async (): Promise<FilesystemPlugin | null> => {
+  if (isCapacitorNative()) {
+    try {
+      const capacitorModule = await import('@capacitor/filesystem');
+      return capacitorModule.Filesystem;
+    } catch (error) {
+      console.error('Error loading Filesystem plugin:', error);
+      return null;
+    }
+  }
+  return null;
+};
+
+// Function to dynamically load Capacitor Toast plugin
+const getToast = async (): Promise<ToastPlugin | null> => {
+  if (isCapacitorNative()) {
+    try {
+      const toastModule = await import('@capacitor/toast');
+      return toastModule.Toast;
+    } catch (error) {
+      console.error('Error loading Toast plugin:', error);
+      return null;
+    }
+  }
+  return null;
 };
 
 /**
@@ -57,34 +102,36 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
     // For Android native app, use Capacitor Filesystem
     if (isAndroid() && isCapacitorNative()) {
       try {
-        const result = await Filesystem.writeFile({
+        const Filesystem = await getFilesystem();
+        const Toast = await getToast();
+        
+        if (!Filesystem) {
+          throw new Error('Filesystem plugin not available');
+        }
+        
+        await Filesystem.writeFile({
           path: `${fileName}.csv`,
           data: csvContent,
-          directory: Directory.Documents,
-          encoding: Encoding.UTF8
+          directory: 'DOCUMENTS', // Use string instead of enum
+          encoding: 'UTF8'        // Use string instead of enum
         });
         
-        await Toast.show({
-          text: `File saved to Documents/${fileName}.csv`,
-          duration: 'long'
-        });
+        if (Toast) {
+          await Toast.show({
+            text: `File saved to Documents/${fileName}.csv`,
+            duration: 'long'
+          });
+        }
         
         return true;
       } catch (error) {
         console.error('Android file write error:', error);
-        throw error;
+        // Fall back to browser download if native save fails
+        return downloadBrowserFile(csvContent, `${fileName}.csv`, 'text/csv;charset=utf-8;');
       }
     } else {
       // For web browser
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${fileName}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      return true;
+      return downloadBrowserFile(csvContent, `${fileName}.csv`, 'text/csv;charset=utf-8;');
     }
   } catch (error) {
     console.error('CSV generation error:', error);
@@ -166,32 +213,64 @@ export const downloadPDF = async (data: any[], fileName: string): Promise<boolea
     // For Android native app, use Capacitor Filesystem
     if (isAndroid() && isCapacitorNative()) {
       try {
-        const result = await Filesystem.writeFile({
+        const Filesystem = await getFilesystem();
+        const Toast = await getToast();
+        
+        if (!Filesystem) {
+          throw new Error('Filesystem plugin not available');
+        }
+        
+        await Filesystem.writeFile({
           path: `${fileName}.html`,
           data: htmlContent,
-          directory: Directory.Documents,
-          encoding: Encoding.UTF8
+          directory: 'DOCUMENTS', // Use string instead of enum
+          encoding: 'UTF8'        // Use string instead of enum
         });
         
-        await Toast.show({
-          text: `File saved to Documents/${fileName}.html`,
-          duration: 'long'
-        });
+        if (Toast) {
+          await Toast.show({
+            text: `File saved to Documents/${fileName}.html`,
+            duration: 'long'
+          });
+        }
         
         return true;
       } catch (error) {
         console.error('Android file write error:', error);
-        throw error;
+        // Fall back to browser method if native save fails
+        return openHtmlInBrowser(htmlContent, fileName);
       }
     } else {
       // For web browsers, open the PDF directly in a new tab
-      const blob = new Blob([htmlContent], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      return true;
+      return openHtmlInBrowser(htmlContent, fileName);
     }
   } catch (error) {
     console.error('PDF generation error:', error);
     return false;
   }
+};
+
+/**
+ * Helper function to download a file in the browser
+ */
+const downloadBrowserFile = (content: string, fileName: string, mimeType: string): boolean => {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  return true;
+};
+
+/**
+ * Helper function to open HTML content in a new browser tab
+ */
+const openHtmlInBrowser = (htmlContent: string, fileName: string): boolean => {
+  const blob = new Blob([htmlContent], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  return true;
 };
