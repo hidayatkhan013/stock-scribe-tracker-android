@@ -48,7 +48,7 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
         for (const currency of currencies) {
           if (data.rates[currency.code]) {
             // Update rate
-            await db.currencies.update(currency.code, {
+            await db.currencies.update(currency.id, {
               exchangeRate: data.rates[currency.code],
               lastUpdated: new Date()
             });
@@ -99,7 +99,17 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
         if (response.ok) {
           const data = await response.json();
           if (data.rates && data.rates.PKR) {
+            // Generate a new ID (using a timestamp is simple but may collide - better to use the DB's auto-increment)
+            const newId = await db.currencies.add({
+              code: 'PKR',
+              name: 'Pakistani Rupee',
+              symbol: '₨',
+              exchangeRate: data.rates.PKR,
+              lastUpdated: new Date()
+            });
+            
             const pkrCurrency: Currency = {
+              id: newId as number,
               code: 'PKR',
               name: 'Pakistani Rupee',
               symbol: '₨',
@@ -107,7 +117,6 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
               lastUpdated: new Date(),
             };
             
-            await db.currencies.add(pkrCurrency);
             setCurrencies([...currencies, pkrCurrency]);
             setIsPKRAdded(true);
             
@@ -123,7 +132,16 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
       }
       
       // Fallback to default rate if API call fails
+      const newId = await db.currencies.add({
+        code: 'PKR',
+        name: 'Pakistani Rupee',
+        symbol: '₨',
+        exchangeRate: 278.5,
+        lastUpdated: new Date()
+      });
+      
       const pkrCurrency: Currency = {
+        id: newId as number,
         code: 'PKR',
         name: 'Pakistani Rupee',
         symbol: '₨',
@@ -131,7 +149,6 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
         lastUpdated: new Date(),
       };
 
-      await db.currencies.add(pkrCurrency);
       setCurrencies([...currencies, pkrCurrency]);
       setIsPKRAdded(true);
 
@@ -198,7 +215,17 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
         // Use the manually entered rate as fallback
       }
       
+      // Add the currency to the database and get the auto-generated ID
+      const newId = await db.currencies.add({
+        code: newCode.toUpperCase(),
+        name: newName,
+        symbol: newSymbol,
+        exchangeRate: finalRate,
+        lastUpdated: new Date(),
+      });
+      
       const newCurrency: Currency = {
+        id: newId as number, // Use the ID returned from the add operation
         code: newCode.toUpperCase(),
         name: newName,
         symbol: newSymbol,
@@ -206,7 +233,6 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
         lastUpdated: new Date(),
       };
 
-      await db.currencies.add(newCurrency);
       setCurrencies([...currencies, newCurrency]);
 
       setNewCode('');

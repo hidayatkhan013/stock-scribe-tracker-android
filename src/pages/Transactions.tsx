@@ -65,6 +65,23 @@ const Transactions = () => {
           .where('userId')
           .equals(currentUser.id)
           .toArray();
+          
+        // If any transactions are missing the currency property, use their stock's currency
+        for (let tx of txs) {
+          if (!tx.currency) {
+            const stock = await db.stocks.get(tx.stockId);
+            if (stock) {
+              // Update transaction with stock's currency
+              tx.currency = stock.currency;
+              // Optionally update in DB too
+              await db.transactions.update(tx.id as number, { currency: stock.currency });
+            } else {
+              // Fallback to USD if stock can't be found
+              tx.currency = 'USD';
+            }
+          }
+        }
+        
         setTransactions(txs);
         
         // Get all stocks for the current user
@@ -116,7 +133,7 @@ const Transactions = () => {
           stock?.ticker.toLowerCase().includes(term) ||
           stock?.name.toLowerCase().includes(term) ||
           transaction.type.toLowerCase().includes(term) ||
-          transaction.currency.toLowerCase().includes(term) ||
+          (transaction.currency && transaction.currency.toLowerCase().includes(term)) ||
           format(new Date(transaction.date), 'MMM dd, yyyy').toLowerCase().includes(term)
         );
       });
@@ -234,8 +251,11 @@ const Transactions = () => {
                     const originalPrice = transaction.price;
                     const originalTotal = transaction.shares * originalPrice;
                     
+                    // Use transaction.currency, defaulting to stock's currency if missing
+                    const txCurrency = transaction.currency || stock?.currency || 'USD';
+                    
                     // Convert to selected currency if needed
-                    const convertedPrice = convertCurrency(originalPrice, transaction.currency);
+                    const convertedPrice = convertCurrency(originalPrice, txCurrency);
                     const convertedTotal = transaction.shares * convertedPrice;
                     
                     return (
@@ -257,17 +277,17 @@ const Transactions = () => {
                         <TableCell>{transaction.shares}</TableCell>
                         <TableCell>
                           {convertedPrice.toFixed(2)} {defaultCurrency}
-                          {transaction.currency !== defaultCurrency && (
+                          {txCurrency !== defaultCurrency && (
                             <div className="text-xs text-muted-foreground">
-                              Originally: {originalPrice.toFixed(2)} {transaction.currency}
+                              Originally: {originalPrice.toFixed(2)} {txCurrency}
                             </div>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
                           {convertedTotal.toFixed(2)} {defaultCurrency}
-                          {transaction.currency !== defaultCurrency && (
+                          {txCurrency !== defaultCurrency && (
                             <div className="text-xs text-muted-foreground text-right">
-                              Originally: {originalTotal.toFixed(2)} {transaction.currency}
+                              Originally: {originalTotal.toFixed(2)} {txCurrency}
                             </div>
                           )}
                         </TableCell>

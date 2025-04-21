@@ -26,12 +26,13 @@ export interface Transaction {
   shares: number;
   price: number;
   amount: number;
+  currency: string; // Added currency property
   date: Date;
   note?: string;
 }
 
 export interface Currency {
-  id: number; // Adding id property to match the expected type
+  id: number; 
   code: string;
   name: string;
   symbol: string;
