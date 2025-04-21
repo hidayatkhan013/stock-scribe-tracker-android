@@ -1,4 +1,3 @@
-
 // Use dynamic imports for Capacitor modules to prevent build issues
 // These types are just for TypeScript and won't be included in the final bundle
 type FilesystemPlugin = {
@@ -153,23 +152,33 @@ export const downloadPDF = async (
   fileName: string,
   username?: string
 ): Promise<boolean> => {
-  if (!data.length) {
-    return false;
-  }
+  if (!data.length) return false;
 
-  // Basic calculations for demo, you should replace with your business logic
-  const totalDebit = data.filter(d => d.debit).reduce((sum, d) => sum + Number(d.debit ?? 0), 0);
-  const totalCredit = data.filter(d => d.credit).reduce((sum, d) => sum + Number(d.credit ?? 0), 0);
-  const openingBalance = 0;
-  const grandTotal = totalCredit - totalDebit;
-  const runningBalance = openingBalance + grandTotal;
+  // Summaries for the header (example: you may adjust)
+  const totalBuy = data
+    .filter((d) => d.type === 'Buy' && d.amount)
+    .reduce((sum, d) => sum + Number(d.amount || 0), 0);
+  const totalSell = data
+    .filter((d) => d.type === 'Sell' && d.amount)
+    .reduce((sum, d) => sum + Number(d.amount || 0), 0);
 
-  // Grab today's info
+  // Today's info
   const now = new Date();
   const formattedNow = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + " | " +
-    now.toLocaleDateString([], { day: '2-digit', month: 'short', year: '2-digit' });
+      now.toLocaleDateString([], { day: '2-digit', month: 'short', year: '2-digit' });
 
-  // Compose HTML (customized to your image)
+  // Determine unique columns based on your data (for flexible table header)
+  const columns = ['date', 'type', 'details', 'shares', 'price', 'amount'];
+  const columnLabels: Record<string, string> = {
+    date: "Date",
+    type: "Type",
+    details: "Details",
+    shares: "Shares",
+    price: "Price",
+    amount: "Amount",
+  };
+
+  // Template inspired by screenshot: header, brand color, bold rows, totals in summary.
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -177,96 +186,75 @@ export const downloadPDF = async (
         <title>${fileName}</title>
         <meta charset="utf-8">
         <style>
-          body { font-family: Arial, sans-serif; margin:0; padding:0; color:#111 }
-          h1 { text-align: center; margin: 24px 4px 4px 4px; font-size: 2rem; }
-          .report-meta { text-align: center; color: #888; margin-bottom: 10px; }
-          .summary-card { display: flex; justify-content: space-between; border: 1px solid #aaa; border-radius:8px; padding:16px; margin-bottom:20px; }
-          .summary-stat { flex:1; text-align:center; }
-          .summary-stat:not(:last-child) { border-right: 1px solid #eee;}
-          .summary-title { font-size: 0.9rem; color: #777;}
-          .summary-value { font-size:1.1rem; }
-          .summary-credit { color: #056e05; }
-          .summary-debit { color: #e12d2d; }
-          .summary-balance { color:#3D3; }
-          .entries { margin-top: 24px; }
-          .entries-title { font-weight: 600; font-size: 1rem; margin-bottom: 8px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 1rem;}
-          th, td { border: 1px solid #ddd; padding: 7px 9px; text-align: left; font-size:0.96rem }
-          th { background: #f3f3f5; }
-          td.debit  { background: #ffecec; }
-          td.credit { background: #e9ffef; }
-          td.debit, .summary-debit, .debit-balance { color: #e12d2d; font-weight:bold; }
-          td.credit, .summary-credit { color: #056e05; font-weight: bold; }
-          .grand-total { font-weight: 700; font-size:1.05rem; color:#111; background: #fafafb }
-          .footer { font-size:13px; color:#222; margin-top:20px; margin-left:10px }
+          body { background: #f8f9fc; font-family: 'Segoe UI', Arial, sans-serif; color: #232136; margin:0; padding:0;}
+          .report-container { margin: 40px auto; padding: 32px; background: #fff; max-width: 800px; border-radius: 18px; box-shadow: 0 4px 30px rgba(34,36,38,0.06); }
+          .report-title { color: #9b87f5; font-weight: 700; font-size: 2.1rem; letter-spacing: 0.5px; text-align: center; margin-bottom: 0.5em;}
+          .user-subtitle { text-align: center; font-size:1.05rem; color: #5c5877; margin-bottom: 1em;}
+          .meta { display: flex; justify-content: space-between; color: #7c7a8c; font-size: 1rem; margin-bottom: 16px; }
+          .summary-box { display:flex; justify-content: center; gap: 32px; margin-bottom:22px;}
+          .summary-stat { background: #eee8fd; border-radius: 10px; padding:10px 22px; display:flex; flex-direction:column; align-items:center; border:1.5px solid #e1e0e7;}
+          .summary-label { color: #7a6ecb; font-size:0.96rem;}
+          .summary-value { font-size:1.18rem; font-weight:600; color:#41338b;}
+          table { width: 100%; border-collapse: collapse; background: #fcfcff; margin-bottom: 14px;}
+          th, td { border: 1px solid #e5e5f5; padding: 10px 8px; font-size: 1.06rem; }
+          th { background: #ede9fe; color:#6750d7; font-weight:700;}
+          tr:nth-child(even) td { background: #f6f7fb; }
+          tr.entry-row { transition: background .15s;}
+          .entry-type-buy { color:#00a156; font-weight:600;}
+          .entry-type-sell { color:#ea384c; font-weight:600;}
+          .footer { margin-top:40px; color:#9b87f5; font-size:16px; text-align:right;}
         </style>
       </head>
       <body>
-        <h1>${username || "StockScribe User"} Statement</h1>
-        <div class="report-meta">
-          <!-- Additional meta, like phone number or date range, can go here -->
-        </div>
-        <div class="summary-card">
-          <div class="summary-stat">
-            <div class="summary-title">Opening Balance</div>
-            <div class="summary-value">${openingBalance} <span>﷼</span></div>
-            <div class="summary-title">(settled)</div>
+        <div class="report-container">
+          <div class="report-title">
+            Stock Statement
           </div>
-          <div class="summary-stat">
-            <div class="summary-title">Total Debit (-)</div>
-            <div class="summary-value summary-debit">${totalDebit.toLocaleString()} <span>﷼</span></div>
+          <div class="user-subtitle">${username ? username : "StockScribe User"}</div>
+          <div class="meta">
+            <div>Date: ${now.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+            <div>Entries: ${data.length}</div>
           </div>
-          <div class="summary-stat">
-            <div class="summary-title">Total Credit (+)</div>
-            <div class="summary-value summary-credit">${totalCredit.toLocaleString()} <span>﷼</span></div>
+          <div class="summary-box">
+            <div class="summary-stat">
+              <div class="summary-label">Total Buy</div>
+              <div class="summary-value">${totalBuy.toLocaleString()}</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-label">Total Sell</div>
+              <div class="summary-value">${totalSell.toLocaleString()}</div>
+            </div>
           </div>
-          <div class="summary-stat">
-            <div class="summary-title">Net Balance</div>
-            <div class="summary-value summary-balance">${grandTotal} <span>﷼</span></div>
-          </div>
-          <div class="summary-stat">
-            <div class="summary-title">Running Balance</div>
-            <div class="summary-value">${runningBalance} <span>﷼</span></div>
-          </div>
-        </div>
-        <div class="entries">
-          <div class="entries-title">No. of Entries: ${data.length} (All)</div>
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Details</th>
-                <th>Debit (-)</th>
-                <th>Credit (+)</th>
-                <th>Balance</th>
+                ${columns.map(col => `<th>${columnLabels[col]}</th>`).join("")}
               </tr>
             </thead>
             <tbody>
-              ${data.map((row) => `
-                <tr>
-                  <td>${row.date || ''}</td>
-                  <td>${row.details || ''}</td>
-                  <td class="debit">${row.debit || ''}</td>
-                  <td class="credit">${row.credit || ''}</td>
-                  <td class="${Number(row.balance) < 0 ? 'debit-balance' : ''}">${row.balance || ''}</td>
+              ${data.map(row => `
+                <tr class="entry-row">
+                  <td>${row.date ? row.date : ""}</td>
+                  <td class="entry-type-${row.type && row.type.toLowerCase ? row.type.toLowerCase() : ""}">
+                    ${row.type || ""}
+                  </td>
+                  <td>${row.details || row.note || row.description || ""}</td>
+                  <td>${row.shares !== undefined ? row.shares : ""}</td>
+                  <td>${row.price !== undefined ? row.price : ""}</td>
+                  <td>${row.amount !== undefined ? row.amount : ""}</td>
                 </tr>
-              `).join('')}
-              <tr class="grand-total">
-                <td colspan="2">Grand Total</td>
-                <td>${totalDebit.toLocaleString()} ﷼</td>
-                <td>${totalCredit.toLocaleString()} ﷼</td>
-                <td>${grandTotal} ﷼</td>
-              </tr>
+              `).join("")}
             </tbody>
           </table>
-        </div>
-        <div class="footer">
-          Report Generated : ${formattedNow}
+          <div class="footer">
+            Report Generated: ${formattedNow}
+          </div>
         </div>
       </body>
     </html>
   `;
 
+  // Android native file save with .html as "PDF"
   if (isAndroid() && isCapacitorNative()) {
     try {
       const Filesystem = await getFilesystem();
@@ -284,7 +272,7 @@ export const downloadPDF = async (
       if (Toast) {
         await Toast.show({
           text: `File saved to Download/${fileName}.html`,
-          duration: "long" // Changed from string to "long" | "short" type
+          duration: "long"
         });
       }
       return true;
@@ -293,8 +281,17 @@ export const downloadPDF = async (
       return openHtmlInBrowser(htmlContent, fileName);
     }
   } else {
-    // For web browsers, open in a new tab
-    return openHtmlInBrowser(htmlContent, fileName);
+    // For web browsers, download as .html file instead of opening
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${fileName}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    return true;
   }
 };
 
