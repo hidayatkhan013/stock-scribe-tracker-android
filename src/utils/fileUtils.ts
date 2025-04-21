@@ -1,3 +1,4 @@
+
 // Use dynamic imports for Capacitor modules to prevent build issues
 // These types are just for TypeScript and won't be included in the final bundle
 type FilesystemPlugin = {
@@ -7,6 +8,17 @@ type FilesystemPlugin = {
     directory: any;
     encoding: any;
   }) => Promise<any>;
+  getUri: (options: {
+    path: string;
+    directory: any;
+  }) => Promise<{ uri: string }>;
+  mkdir: (options: {
+    path: string;
+    directory: any;
+    recursive: boolean;
+  }) => Promise<void>;
+  checkPermissions: () => Promise<{ publicStorage: string }>;
+  requestPermissions: () => Promise<{ publicStorage: string }>;
 };
 
 type ToastPlugin = {
@@ -63,11 +75,77 @@ const getToast = async (): Promise<ToastPlugin | null> => {
 };
 
 /**
- * Helper function to get the Download path for Android
+ * Checks and requests storage permissions on Android
  */
-const getAndroidDownloadPath = (fileName: string, ext: string) => {
-  // Always save in Download folder on Android
-  return `Download/${fileName}.${ext}`;
+const ensureStoragePermissions = async (): Promise<boolean> => {
+  if (!isAndroid() || !isCapacitorNative()) return true;
+
+  try {
+    const Filesystem = await getFilesystem();
+    if (!Filesystem) return false;
+
+    // Check current permissions
+    const permissionStatus = await Filesystem.checkPermissions();
+    if (permissionStatus.publicStorage === 'granted') return true;
+
+    // Request permissions if not granted
+    const requestResult = await Filesystem.requestPermissions();
+    return requestResult.publicStorage === 'granted';
+  } catch (error) {
+    console.error('Permission check failed:', error);
+    return false;
+  }
+};
+
+/**
+ * Creates directory path if it doesn't exist
+ */
+const ensureDirectoryExists = async (path: string, directory: string): Promise<boolean> => {
+  try {
+    const Filesystem = await getFilesystem();
+    if (!Filesystem) return false;
+
+    await Filesystem.mkdir({
+      path,
+      directory,
+      recursive: true
+    });
+    return true;
+  } catch (error) {
+    // Directory might already exist, which is fine
+    console.log('Directory exists or error creating:', error);
+    return true;
+  }
+};
+
+/**
+ * Gets the appropriate file save location for Android
+ */
+const getAndroidSaveLocation = async (fileName: string, ext: string): Promise<{
+  path: string;
+  directory: string;
+  displayPath: string;
+}> => {
+  const hasPermissions = await ensureStoragePermissions();
+  
+  if (hasPermissions) {
+    // Try to save to Downloads folder if we have permissions
+    await ensureDirectoryExists('Download', 'EXTERNAL');
+    return {
+      path: `Download/${fileName}.${ext}`,
+      directory: 'EXTERNAL',
+      displayPath: `Download/${fileName}.${ext}`
+    };
+  } else {
+    // Fallback to app-specific location if permissions are denied
+    const appFolderPath = 'StockScribe';
+    await ensureDirectoryExists(appFolderPath, 'DOCUMENTS');
+    return {
+      path: `${appFolderPath}/${fileName}.${ext}`,
+      directory: 'DOCUMENTS',
+      displayPath: `App Documents/${appFolderPath}/${fileName}.${ext}`
+    };
+  }
 };
 
 /**
@@ -110,17 +188,26 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
         const Toast = await getToast();
 
         if (!Filesystem) throw new Error('Filesystem plugin not available');
+        
+        // Get the appropriate save location
+        const saveLocation = await getAndroidSaveLocation(fileName, "csv");
 
         await Filesystem.writeFile({
-          path: getAndroidDownloadPath(fileName, "csv"),
+          path: saveLocation.path,
           data: csvContent,
-          directory: 'EXTERNAL',
+          directory: saveLocation.directory,
           encoding: 'UTF8'
+        });
+
+        // Get URI for the saved file to show in toast
+        const fileInfo = await Filesystem.getUri({
+          path: saveLocation.path,
+          directory: saveLocation.directory
         });
 
         if (Toast) {
           await Toast.show({
-            text: `File saved to Download/${fileName}.csv`,
+            text: `File saved to ${saveLocation.displayPath}`,
             duration: 'long'
           });
         }
@@ -128,6 +215,13 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
         return true;
       } catch (error) {
         console.error('Android file write error:', error);
+        const Toast = await getToast();
+        if (Toast) {
+          await Toast.show({
+            text: `Error saving file: ${(error as Error).message}`,
+            duration: 'long'
+          });
+        }
         // Fall back to browser download if native save fails
         return downloadBrowserFile(csvContent, `${fileName}.csv`, 'text/csv;charset=utf-8;');
       }
@@ -283,22 +377,38 @@ export const downloadPDF = async (
 
       if (!Filesystem) throw new Error('Filesystem plugin not available');
 
+      // Get the appropriate save location
+      const saveLocation = await getAndroidSaveLocation(fileName, "html");
+
       await Filesystem.writeFile({
-        path: getAndroidDownloadPath(fileName, "html"),
+        path: saveLocation.path,
         data: htmlContent,
-        directory: 'EXTERNAL',
+        directory: saveLocation.directory,
         encoding: 'UTF8'
+      });
+
+      // Get URI for the saved file to show in toast
+      const fileInfo = await Filesystem.getUri({
+        path: saveLocation.path,
+        directory: saveLocation.directory
       });
 
       if (Toast) {
         await Toast.show({
-          text: `File saved to Download/${fileName}.html`,
+          text: `File saved to ${saveLocation.displayPath}`,
           duration: "long"
         });
       }
       return true;
     } catch (error) {
       console.error('Android file write error:', error);
+      const Toast = await getToast();
+      if (Toast) {
+        await Toast.show({
+          text: `Error saving file: ${(error as Error).message}`,
+          duration: 'long'
+        });
+      }
       // Fall back to browser download
       return downloadBrowserFile(htmlContent, `${fileName}.html`, 'text/html');
     }
@@ -323,12 +433,3 @@ const downloadBrowserFile = (content: string, fileName: string, mimeType: string
   return true;
 };
 
-/**
- * Helper function to open HTML content in a new browser tab
- */
-const openHtmlInBrowser = (htmlContent: string, fileName: string): boolean => {
-  const blob = new Blob([htmlContent], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
-  return true;
-};
