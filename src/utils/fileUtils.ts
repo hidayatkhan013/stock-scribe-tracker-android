@@ -1,4 +1,3 @@
-
 // Use dynamic imports for Capacitor modules to prevent build issues
 // These types are just for TypeScript and won't be included in the final bundle
 type FilesystemPlugin = {
@@ -157,10 +156,10 @@ export const downloadPDF = async (
 
   // Summaries and calculations for the header
   const totalBuy = data
-    .filter((d) => d.type === 'Buy' && d.amount)
+    .filter((d) => d.type === 'buy' || d.type === 'Buy')
     .reduce((sum, d) => sum + Number(d.amount || 0), 0);
   const totalSell = data
-    .filter((d) => d.type === 'Sell' && d.amount)
+    .filter((d) => d.type === 'sell' || d.type === 'Sell')
     .reduce((sum, d) => sum + Number(d.amount || 0), 0);
   const netProfit = totalSell - totalBuy;
 
