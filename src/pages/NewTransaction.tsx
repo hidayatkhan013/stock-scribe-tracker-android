@@ -1,220 +1,447 @@
+
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { db, addTransaction, getStock, addStock, getUserSettings } from '@/lib/db';
 import AppLayout from '@/components/layout/AppLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calendar';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
-import { CalendarIcon, TrendingUp, TrendingDown } from 'lucide-react';
-import { useToast } from '@/components/ui/use-toast';
-import { Stock, db, getUserSettings } from '@/lib/db';
+import { CalendarIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+const formSchema = z.object({
+  type: z.enum(["Buy", "Sell"]),
+  ticker: z.string().min(1, { message: "Ticker symbol is required" }),
+  stockName: z.string().min(1, { message: "Stock name is required" }),
+  shares: z.coerce.number().positive({ message: "Must be a positive number" }),
+  price: z.coerce.number().positive({ message: "Must be a positive number" }),
+  amount: z.coerce.number().optional(),
+  date: z.date(),
+  currency: z.string().min(1, { message: "Currency is required" }),
+  note: z.string().optional(),
+});
+
+type FormValues = z.infer<typeof formSchema>;
 
 const NewTransaction = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { currentUser } = useAuth();
   const { toast } = useToast();
-  const [stock, setStock] = useState<Stock | null>(null);
-  const [stockInput, setStockInput] = useState<string>('');
-  const [shares, setShares] = useState<number | ''>('');
-  const [price, setPrice] = useState<number | ''>('');
-  const [date, setDate] = useState<Date>(new Date());
-  const [isLoading, setIsLoading] = useState(false);
-  const [transactionType, setTransactionType] = useState<'buy' | 'sell'>('buy');
-  const [currency, setCurrency] = useState<string>('USD');
-  
+  const { currentUser } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currencies, setCurrencies] = useState<{ id: number; code: string; name: string }[]>([]);
+  const [defaultCurrency, setDefaultCurrency] = useState('USD');
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      type: "Buy",
+      ticker: "",
+      stockName: "",
+      shares: undefined,
+      price: undefined,
+      amount: undefined,
+      date: new Date(),
+      currency: defaultCurrency,
+      note: "",
+    },
+  });
+
   useEffect(() => {
-    if (location.state?.transactionType) {
-      setTransactionType(location.state.transactionType);
-    }
-  }, [location.state]);
-  
-  useEffect(() => {
-    const loadDefaultCurrency = async () => {
-      if (currentUser?.id) {
-        const settings = await getUserSettings(currentUser.id);
-        if (settings?.defaultCurrency) {
-          setCurrency(settings.defaultCurrency);
+    const loadCurrencies = async () => {
+      try {
+        const allCurrencies = await db.currencies.toArray();
+        setCurrencies(allCurrencies);
+
+        if (currentUser?.id) {
+          const settings = await getUserSettings(currentUser.id);
+          if (settings?.defaultCurrency) {
+            setDefaultCurrency(settings.defaultCurrency);
+            form.setValue('currency', settings.defaultCurrency);
+          }
         }
+      } catch (error) {
+        console.error('Error loading currencies:', error);
+      }
+    };
+
+    loadCurrencies();
+  }, [currentUser, form]);
+
+  const watchShares = form.watch('shares');
+  const watchPrice = form.watch('price');
+  const watchType = form.watch('type');
+  const watchTicker = form.watch('ticker');
+
+  useEffect(() => {
+    const calculateAmount = () => {
+      const shares = form.getValues('shares');
+      const price = form.getValues('price');
+      
+      if (shares && price) {
+        form.setValue('amount', parseFloat((shares * price).toFixed(2)));
       }
     };
     
-    loadDefaultCurrency();
-  }, [currentUser]);
+    calculateAmount();
+  }, [watchShares, watchPrice, form]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    const loadStockDetails = async () => {
+      const ticker = form.getValues('ticker');
+      if (!ticker || ticker.length < 1) return;
+      
+      try {
+        const stockInfo = await getStock(ticker);
+        if (stockInfo) {
+          form.setValue('stockName', stockInfo.name);
+          if (stockInfo.currency) {
+            form.setValue('currency', stockInfo.currency);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading stock details:', error);
+      }
+    };
+    
+    loadStockDetails();
+  }, [watchTicker, form]);
 
-    if (!currentUser?.id || !stock) {
+  const onSubmit = async (data: FormValues) => {
+    if (!currentUser) {
       toast({
-        title: 'Error',
-        description: 'Please select a stock and ensure you are logged in.',
-        variant: 'destructive',
+        title: "Authentication Required",
+        description: "Please log in to add transactions",
+        variant: "destructive",
       });
       return;
     }
 
-    if (shares === '' || price === '') {
-      toast({
-        title: 'Error',
-        description: 'Shares and price cannot be empty.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setIsLoading(true);
+    setIsSubmitting(true);
 
     try {
-      await db.transactions.add({
+      // Check if stock exists, if not create it
+      let stockId: number | undefined;
+      const existingStock = await getStock(data.ticker);
+      
+      if (existingStock) {
+        stockId = existingStock.id;
+      } else {
+        stockId = await addStock({
+          ticker: data.ticker,
+          name: data.stockName,
+          currency: data.currency,
+        });
+      }
+
+      if (!stockId) {
+        throw new Error("Failed to get or create stock");
+      }
+
+      // Add the transaction
+      await addTransaction({
         userId: currentUser.id,
-        stockId: stock.id,
-        type: transactionType,
-        shares: Number(shares),
-        price: Number(price),
-        currency: currency,
-        date: date,
-        notes: ''
+        stockId,
+        type: data.type,
+        shares: data.shares,
+        price: data.price,
+        amount: data.amount || data.shares * data.price,
+        date: data.date,
+        note: data.note || '',
       });
 
       toast({
-        title: 'Success',
-        description: 'Transaction added successfully!',
+        title: "Transaction Added",
+        description: `Successfully added ${data.type} transaction for ${data.ticker}`,
       });
 
-      navigate('/transactions');
+      navigate("/transactions");
     } catch (error) {
       console.error('Error adding transaction:', error);
       toast({
-        title: 'Error',
-        description: 'Failed to add transaction. Please try again.',
-        variant: 'destructive',
+        title: "Transaction Failed",
+        description: "There was an error adding your transaction. Please try again.",
+        variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleTickerChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const input = e.target.value;
-    setStockInput(input);
-    
-    if (!input) {
-      setStock(null);
-      return;
-    }
-    
-    const ticker = input.toUpperCase();
-    
-    if (ticker && currentUser?.id) {
-      const foundStock = await db.stocks.where('ticker').equals(ticker).first();
-      if (foundStock) {
-        setStock(foundStock);
-      } else {
-        const newStock: Stock = {
-          ticker: ticker,
-          name: ticker,
-          currency: currency,
-          userId: currentUser.id
-        };
-        const id = await db.stocks.add(newStock);
-        const createdStock = await db.stocks.get(id);
-        if (createdStock) {
-          setStock(createdStock);
-        }
-      }
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <AppLayout title={`${transactionType === 'buy' ? 'Buy' : 'Sell'} Stock`}>
-      <form onSubmit={handleSubmit} className="max-w-md mx-auto space-y-6">
+    <AppLayout title="New Transaction">
+      <div className="max-w-lg mx-auto">
         <Card>
           <CardHeader>
-            <CardTitle>{transactionType === 'buy' ? 'Buy' : 'Sell'} Stock</CardTitle>
-            <CardDescription>Record your stock trade details</CardDescription>
+            <CardTitle>Add New Transaction</CardTitle>
+            <CardDescription>Record a new stock purchase or sale</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="stock">Stock Ticker</Label>
-              <Input
-                id="stock"
-                type="text"
-                placeholder="Enter stock ticker"
-                value={stockInput}
-                onChange={handleTickerChange}
-              />
-            </div>
-            <div>
-              <Label htmlFor="shares">Shares</Label>
-              <Input
-                id="shares"
-                type="number"
-                placeholder="Enter number of shares"
-                value={shares}
-                onChange={(e) => setShares(e.target.value === '' ? '' : Number(e.target.value))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="price">Price</Label>
-              <Input
-                id="price"
-                type="number"
-                placeholder="Enter price"
-                value={price}
-                onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
-              />
-            </div>
-            <div>
-              <Label>Transaction Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={"outline"}
-                    className={
-                      "w-[240px] justify-start text-left font-normal" +
-                      (date ? "" : " text-muted-foreground")
-                    }
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date ? format(date, "PPP") : <span>Pick a date</span>}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={(newDate) => newDate && setDate(newDate)}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <Button 
-              type="submit" 
-              disabled={isLoading}
-              variant={transactionType === 'buy' ? 'default' : 'destructive'}
-            >
-              {isLoading ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              ) : (
-                <>
-                  {transactionType === 'buy' ? (
-                    <TrendingUp className="mr-2 h-4 w-4" />
-                  ) : (
-                    <TrendingDown className="mr-2 h-4 w-4" />
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                <FormField
+                  control={form.control}
+                  name="type"
+                  render={({ field }) => (
+                    <FormItem className="space-y-3">
+                      <FormLabel>Transaction Type</FormLabel>
+                      <FormControl>
+                        <RadioGroup
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                          className="flex space-x-1"
+                        >
+                          <div className="flex items-center space-x-2 flex-1">
+                            <RadioGroupItem value="Buy" id="buy" />
+                            <Label
+                              htmlFor="buy"
+                              className="flex-1 py-2 rounded-md text-center cursor-pointer bg-green-50 hover:bg-green-100 border border-green-200"
+                            >
+                              BUY
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2 flex-1">
+                            <RadioGroupItem value="Sell" id="sell" />
+                            <Label
+                              htmlFor="sell"
+                              className="flex-1 py-2 rounded-md text-center cursor-pointer bg-red-50 hover:bg-red-100 border border-red-200"
+                            >
+                              SELL
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
-                  {transactionType === 'buy' ? 'BUY' : 'SELL'}
-                </>
-              )}
-            </Button>
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="ticker"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Ticker Symbol</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g. AAPL" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="stockName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Stock Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g. Apple Inc." {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="shares"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Number of Shares</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            placeholder="Enter number of shares" 
+                            step="any"
+                            {...field} 
+                            onChange={(e) => {
+                              field.onChange(e.target.value === '' ? undefined : parseFloat(e.target.value));
+                            }}
+                            value={field.value === undefined ? '' : field.value}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="price"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Price per Share</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            placeholder="Enter price per share"
+                            step="any"
+                            {...field} 
+                            onChange={(e) => {
+                              field.onChange(e.target.value === '' ? undefined : parseFloat(e.target.value));
+                            }}
+                            value={field.value === undefined ? '' : field.value}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="amount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Total Amount</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          {...field} 
+                          readOnly 
+                          value={field.value === undefined ? '' : field.value}
+                          className="bg-muted cursor-not-allowed"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="date"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>Transaction Date</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant={"outline"}
+                                className={cn(
+                                  "w-full pl-3 text-left font-normal",
+                                  !field.value && "text-muted-foreground"
+                                )}
+                              >
+                                {field.value ? (
+                                  format(field.value, "PPP")
+                                ) : (
+                                  <span>Pick a date</span>
+                                )}
+                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="center">
+                            <Calendar
+                              mode="single"
+                              selected={field.value}
+                              onSelect={field.onChange}
+                              disabled={(date) =>
+                                date > new Date() || date < new Date("1900-01-01")
+                              }
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="currency"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Currency</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                          value={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select Currency" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {currencies.map((currency) => (
+                              <SelectItem key={currency.id} value={currency.code}>
+                                {currency.code} - {currency.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="note"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Notes (Optional)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Any additional information..." {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="flex justify-end space-x-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => navigate("/transactions")}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? "Saving..." : "Save Transaction"}
+                  </Button>
+                </div>
+              </form>
+            </Form>
           </CardContent>
         </Card>
-      </form>
+      </div>
     </AppLayout>
   );
 };

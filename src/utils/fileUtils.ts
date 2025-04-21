@@ -1,3 +1,4 @@
+
 // Use dynamic imports for Capacitor modules to prevent build issues
 // These types are just for TypeScript and won't be included in the final bundle
 type FilesystemPlugin = {
@@ -154,20 +155,21 @@ export const downloadPDF = async (
 ): Promise<boolean> => {
   if (!data.length) return false;
 
-  // Summaries for the header (example: you may adjust)
+  // Summaries and calculations for the header
   const totalBuy = data
     .filter((d) => d.type === 'Buy' && d.amount)
     .reduce((sum, d) => sum + Number(d.amount || 0), 0);
   const totalSell = data
     .filter((d) => d.type === 'Sell' && d.amount)
     .reduce((sum, d) => sum + Number(d.amount || 0), 0);
+  const netProfit = totalSell - totalBuy;
 
   // Today's info
   const now = new Date();
   const formattedNow = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + " | " +
       now.toLocaleDateString([], { day: '2-digit', month: 'short', year: '2-digit' });
 
-  // Determine unique columns based on your data (for flexible table header)
+  // Determine unique columns based on data
   const columns = ['date', 'type', 'details', 'shares', 'price', 'amount'];
   const columnLabels: Record<string, string> = {
     date: "Date",
@@ -178,7 +180,7 @@ export const downloadPDF = async (
     amount: "Amount",
   };
 
-  // Template inspired by screenshot: header, brand color, bold rows, totals in summary.
+  // Template with proper formatting and calculations
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -186,45 +188,64 @@ export const downloadPDF = async (
         <title>${fileName}</title>
         <meta charset="utf-8">
         <style>
-          body { background: #f8f9fc; font-family: 'Segoe UI', Arial, sans-serif; color: #232136; margin:0; padding:0;}
-          .report-container { margin: 40px auto; padding: 32px; background: #fff; max-width: 800px; border-radius: 18px; box-shadow: 0 4px 30px rgba(34,36,38,0.06); }
-          .report-title { color: #9b87f5; font-weight: 700; font-size: 2.1rem; letter-spacing: 0.5px; text-align: center; margin-bottom: 0.5em;}
-          .user-subtitle { text-align: center; font-size:1.05rem; color: #5c5877; margin-bottom: 1em;}
-          .meta { display: flex; justify-content: space-between; color: #7c7a8c; font-size: 1rem; margin-bottom: 16px; }
-          .summary-box { display:flex; justify-content: center; gap: 32px; margin-bottom:22px;}
-          .summary-stat { background: #eee8fd; border-radius: 10px; padding:10px 22px; display:flex; flex-direction:column; align-items:center; border:1.5px solid #e1e0e7;}
-          .summary-label { color: #7a6ecb; font-size:0.96rem;}
-          .summary-value { font-size:1.18rem; font-weight:600; color:#41338b;}
-          table { width: 100%; border-collapse: collapse; background: #fcfcff; margin-bottom: 14px;}
-          th, td { border: 1px solid #e5e5f5; padding: 10px 8px; font-size: 1.06rem; }
-          th { background: #ede9fe; color:#6750d7; font-weight:700;}
-          tr:nth-child(even) td { background: #f6f7fb; }
-          tr.entry-row { transition: background .15s;}
-          .entry-type-buy { color:#00a156; font-weight:600;}
-          .entry-type-sell { color:#ea384c; font-weight:600;}
-          .footer { margin-top:40px; color:#9b87f5; font-size:16px; text-align:right;}
+          @media print {
+            body { -webkit-print-color-adjust: exact; color-adjust: exact; }
+          }
+          body { background: #f8f9fc; font-family: 'Segoe UI', Arial, sans-serif; color: #232136; margin:0; padding:0; }
+          .report-container { margin: 20px auto; padding: 25px; background: #fff; max-width: 800px; border-radius: 12px; box-shadow: 0 2px 20px rgba(0,0,0,0.08); }
+          .report-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eaeaea; }
+          .report-title { color: #4040b2; font-weight: 700; font-size: 1.8rem; margin: 0; }
+          .user-subtitle { color: #5c5877; font-size: 1.1rem; margin: 8px 0 20px 0; }
+          .report-date { color: #7c7a8c; font-size: 0.9rem; text-align: right; }
+          .summary-container { display: flex; justify-content: space-between; margin-bottom: 20px; }
+          .summary-box { flex: 1; margin: 0 10px; padding: 12px 15px; border-radius: 8px; }
+          .buy-box { background: #f0f7ff; border: 1px solid #d0e3ff; }
+          .sell-box { background: #f7fff0; border: 1px solid #e3ffd0; }
+          .profit-box { background: #fff0f9; border: 1px solid #ffd0e8; }
+          .summary-label { font-size: 0.9rem; color: #555; margin-bottom: 5px; font-weight: 500; }
+          .summary-value { font-size: 1.3rem; font-weight: 700; }
+          .buy-value { color: #0055cc; }
+          .sell-value { color: #2a9d00; }
+          .profit-value { color: #cc0055; }
+          table { width: 100%; border-collapse: collapse; background: #fff; margin-bottom: 15px; border: 1px solid #e5e5f5; }
+          th { background: #f0f2ff; color: #4040b2; font-weight: 600; text-align: left; padding: 12px 10px; border-bottom: 2px solid #d8d8ff; }
+          td { padding: 10px; border-bottom: 1px solid #eee; }
+          tr:last-child td { border-bottom: none; }
+          tr:nth-child(even) { background: #f9faff; }
+          .type-buy { color: #0055cc; font-weight: 600; }
+          .type-sell { color: #2a9d00; font-weight: 600; }
+          .footer { margin-top: 20px; color: #9b87f5; font-size: 0.8rem; text-align: right; }
+          .text-right { text-align: right; }
+          .text-center { text-align: center; }
         </style>
       </head>
       <body>
         <div class="report-container">
-          <div class="report-title">
-            Stock Statement
+          <div class="report-header">
+            <div>
+              <h1 class="report-title">Stock Transaction Report</h1>
+              <div class="user-subtitle">${username || "User"}</div>
+            </div>
+            <div class="report-date">
+              Generated: ${formattedNow}
+            </div>
           </div>
-          <div class="user-subtitle">${username ? username : "StockScribe User"}</div>
-          <div class="meta">
-            <div>Date: ${now.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })}</div>
-            <div>Entries: ${data.length}</div>
-          </div>
-          <div class="summary-box">
-            <div class="summary-stat">
+          
+          <div class="summary-container">
+            <div class="summary-box buy-box">
               <div class="summary-label">Total Buy</div>
-              <div class="summary-value">${totalBuy.toLocaleString()}</div>
+              <div class="summary-value buy-value">${totalBuy.toFixed(2)}</div>
             </div>
-            <div class="summary-stat">
+            <div class="summary-box sell-box">
               <div class="summary-label">Total Sell</div>
-              <div class="summary-value">${totalSell.toLocaleString()}</div>
+              <div class="summary-value sell-value">${totalSell.toFixed(2)}</div>
+            </div>
+            <div class="summary-box profit-box">
+              <div class="summary-label">Net Profit/Loss</div>
+              <div class="summary-value profit-value">${netProfit.toFixed(2)}</div>
             </div>
           </div>
+          
           <table>
             <thead>
               <tr>
@@ -233,21 +254,22 @@ export const downloadPDF = async (
             </thead>
             <tbody>
               ${data.map(row => `
-                <tr class="entry-row">
-                  <td>${row.date ? row.date : ""}</td>
-                  <td class="entry-type-${row.type && row.type.toLowerCase ? row.type.toLowerCase() : ""}">
+                <tr>
+                  <td>${row.date || ""}</td>
+                  <td class="type-${row.type && row.type.toLowerCase()}">
                     ${row.type || ""}
                   </td>
                   <td>${row.details || row.note || row.description || ""}</td>
-                  <td>${row.shares !== undefined ? row.shares : ""}</td>
-                  <td>${row.price !== undefined ? row.price : ""}</td>
-                  <td>${row.amount !== undefined ? row.amount : ""}</td>
+                  <td class="text-center">${row.shares !== undefined ? row.shares : ""}</td>
+                  <td class="text-right">${row.price !== undefined ? row.price : ""}</td>
+                  <td class="text-right">${row.amount !== undefined ? row.amount : ""}</td>
                 </tr>
               `).join("")}
             </tbody>
           </table>
+          
           <div class="footer">
-            Report Generated: ${formattedNow}
+            StockScribe - Your personal stock trading tracker
           </div>
         </div>
       </body>
@@ -278,20 +300,12 @@ export const downloadPDF = async (
       return true;
     } catch (error) {
       console.error('Android file write error:', error);
-      return openHtmlInBrowser(htmlContent, fileName);
+      // Fall back to browser download
+      return downloadBrowserFile(htmlContent, `${fileName}.html`, 'text/html');
     }
   } else {
-    // For web browsers, download as .html file instead of opening
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${fileName}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    return true;
+    // For web browsers, download as .html file instead of opening in new tab
+    return downloadBrowserFile(htmlContent, `${fileName}.html`, 'text/html');
   }
 };
 
