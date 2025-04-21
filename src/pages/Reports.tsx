@@ -35,6 +35,7 @@ const Reports = () => {
   const [totalLoss, setTotalLoss] = useState(0);
   const [defaultCurrency, setDefaultCurrency] = useState('USD');
   const [exchangeRates, setExchangeRates] = useState<{[key: string]: number}>({});
+  const [username, setUsername] = useState(currentUser?.username || currentUser?.email || "User");
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -206,6 +207,9 @@ const Reports = () => {
 
   return (
     <AppLayout title="Reports">
+      <div className="text-lg font-semibold text-center mb-2">
+        {username}'s Report
+      </div>
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="w-full md:w-40">

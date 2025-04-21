@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -21,21 +20,19 @@ const NewTransaction = () => {
   const { toast } = useToast();
   const [stock, setStock] = useState<Stock | null>(null);
   const [stockInput, setStockInput] = useState<string>('');
-  const [shares, setShares] = useState<number>(0);
-  const [price, setPrice] = useState<number>(0);
+  const [shares, setShares] = useState<number | ''>('');
+  const [price, setPrice] = useState<number | ''>('');
   const [date, setDate] = useState<Date>(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [transactionType, setTransactionType] = useState<'buy' | 'sell'>('buy');
   const [currency, setCurrency] = useState<string>('USD');
   
-  // Get transaction type from location state, if available
   useEffect(() => {
     if (location.state?.transactionType) {
       setTransactionType(location.state.transactionType);
     }
   }, [location.state]);
   
-  // Load user's default currency
   useEffect(() => {
     const loadDefaultCurrency = async () => {
       if (currentUser?.id) {
@@ -61,16 +58,24 @@ const NewTransaction = () => {
       return;
     }
 
+    if (shares === '' || price === '') {
+      toast({
+        title: 'Error',
+        description: 'Shares and price cannot be empty.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      // Save transaction to database
       await db.transactions.add({
         userId: currentUser.id,
         stockId: stock.id,
-        type: transactionType, // Set transaction type (buy/sell)
-        shares: shares,
-        price: price,
+        type: transactionType,
+        shares: Number(shares),
+        price: Number(price),
         currency: currency,
         date: date,
         notes: ''
@@ -103,7 +108,6 @@ const NewTransaction = () => {
       return;
     }
     
-    // Convert to uppercase only if input exists
     const ticker = input.toUpperCase();
     
     if (ticker && currentUser?.id) {
@@ -111,11 +115,10 @@ const NewTransaction = () => {
       if (foundStock) {
         setStock(foundStock);
       } else {
-        // If stock doesn't exist, create a new one with userId
         const newStock: Stock = {
           ticker: ticker,
-          name: ticker, // You might want to fetch the actual name from an API
-          currency: currency, // Use user's default currency
+          name: ticker,
+          currency: currency,
           userId: currentUser.id
         };
         const id = await db.stocks.add(newStock);
@@ -153,7 +156,7 @@ const NewTransaction = () => {
                 type="number"
                 placeholder="Enter number of shares"
                 value={shares}
-                onChange={(e) => setShares(Number(e.target.value))}
+                onChange={(e) => setShares(e.target.value === '' ? '' : Number(e.target.value))}
               />
             </div>
             <div>
@@ -163,7 +166,7 @@ const NewTransaction = () => {
                 type="number"
                 placeholder="Enter price"
                 value={price}
-                onChange={(e) => setPrice(Number(e.target.value))}
+                onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
               />
             </div>
             <div>
@@ -205,7 +208,7 @@ const NewTransaction = () => {
                   ) : (
                     <TrendingDown className="mr-2 h-4 w-4" />
                   )}
-                  {transactionType === 'buy' ? 'Buy' : 'Sell'} Stock
+                  {transactionType === 'buy' ? 'BUY' : 'SELL'}
                 </>
               )}
             </Button>

@@ -117,7 +117,7 @@ const Export = () => {
       if (exportType === 'csv') {
         exportSuccess = await downloadCSV(data, fileName);
       } else {
-        exportSuccess = await downloadPDF(data, fileName);
+        exportSuccess = await downloadPDF(data, fileName, currentUser?.username || currentUser?.email || "User");
       }
       
       if (exportSuccess) {
