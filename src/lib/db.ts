@@ -1,4 +1,3 @@
-
 import Dexie, { Table } from 'dexie';
 
 // Define interfaces for our database tables
@@ -26,13 +25,13 @@ export interface Transaction {
   shares: number;
   price: number;
   amount: number;
-  currency: string; // Added currency property
+  currency: string; // Required currency property
   date: Date;
   note?: string;
 }
 
 export interface Currency {
-  id: number; 
+  id?: number; // Make ID optional for new currencies
   code: string;
   name: string;
   symbol: string;
@@ -53,7 +52,7 @@ class StockScribeDB extends Dexie {
   users!: Table<User, number>;
   stocks!: Table<Stock, number>;
   transactions!: Table<Transaction, number>;
-  currencies!: Table<Currency, string>;
+  currencies!: Table<Currency, number>; // Use number type for ID
   settings!: Table<Settings, number>; // Add settings table
 
   constructor() {
@@ -78,9 +77,8 @@ class StockScribeDB extends Dexie {
 export const db = new StockScribeDB();
 
 // Default currencies
-export const defaultCurrencies: Currency[] = [
+export const defaultCurrencies: Omit<Currency, 'id'>[] = [
   { 
-    id: 1,
     code: 'USD', 
     name: 'US Dollar', 
     symbol: '$', 
@@ -88,7 +86,6 @@ export const defaultCurrencies: Currency[] = [
     lastUpdated: new Date() 
   },
   { 
-    id: 2,
     code: 'EUR', 
     name: 'Euro', 
     symbol: '€', 
@@ -96,7 +93,6 @@ export const defaultCurrencies: Currency[] = [
     lastUpdated: new Date() 
   },
   { 
-    id: 3,
     code: 'GBP', 
     name: 'British Pound', 
     symbol: '£', 
@@ -104,7 +100,6 @@ export const defaultCurrencies: Currency[] = [
     lastUpdated: new Date() 
   },
   { 
-    id: 4,
     code: 'JPY', 
     name: 'Japanese Yen', 
     symbol: '¥', 
@@ -120,7 +115,9 @@ export async function initializeDatabase() {
   
   if (currencyCount === 0) {
     // Add default currencies
-    await db.currencies.bulkAdd(defaultCurrencies);
+    for (const currency of defaultCurrencies) {
+      await db.currencies.add(currency);
+    }
   }
 }
 

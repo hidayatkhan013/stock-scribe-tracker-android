@@ -163,7 +163,7 @@ const NewTransaction = () => {
         throw new Error("Failed to get or create stock");
       }
 
-      // Add the transaction
+      // Add the transaction - now including the currency property
       await addTransaction({
         userId: currentUser.id,
         stockId,
@@ -171,6 +171,7 @@ const NewTransaction = () => {
         shares: data.shares,
         price: data.price,
         amount: data.amount || data.shares * data.price,
+        currency: data.currency, // Add the currency property
         date: data.date,
         note: data.note || '',
       });

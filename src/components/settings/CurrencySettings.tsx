@@ -48,7 +48,7 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
         for (const currency of currencies) {
           if (data.rates[currency.code]) {
             // Update rate
-            await db.currencies.update(currency.id, {
+            await db.currencies.update(currency.id as number, {
               exchangeRate: data.rates[currency.code],
               lastUpdated: new Date()
             });
@@ -109,7 +109,7 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
             });
             
             const pkrCurrency: Currency = {
-              id: newId as number,
+              id: newId,
               code: 'PKR',
               name: 'Pakistani Rupee',
               symbol: '₨',
@@ -141,7 +141,7 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
       });
       
       const pkrCurrency: Currency = {
-        id: newId as number,
+        id: newId,
         code: 'PKR',
         name: 'Pakistani Rupee',
         symbol: '₨',
@@ -225,7 +225,7 @@ export function CurrencySettings({ currencies, setCurrencies }: CurrencySettings
       });
       
       const newCurrency: Currency = {
-        id: newId as number, // Use the ID returned from the add operation
+        id: newId,
         code: newCode.toUpperCase(),
         name: newName,
         symbol: newSymbol,
