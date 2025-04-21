@@ -1,3 +1,4 @@
+
 // Use dynamic imports for Capacitor modules to prevent build issues
 // These types are just for TypeScript and won't be included in the final bundle
 type FilesystemPlugin = {
@@ -10,7 +11,7 @@ type FilesystemPlugin = {
 };
 
 type ToastPlugin = {
-  show: (options: { text: string; duration: string }) => Promise<void>;
+  show: (options: { text: string; duration: "long" | "short" }) => Promise<void>;
 };
 
 type CapacitorGlobal = {
@@ -283,7 +284,7 @@ export const downloadPDF = async (
       if (Toast) {
         await Toast.show({
           text: `File saved to Download/${fileName}.html`,
-          duration: 'long'
+          duration: "long" // Changed from string to "long" | "short" type
         });
       }
       return true;
