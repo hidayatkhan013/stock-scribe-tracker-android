@@ -1,3 +1,4 @@
+
 import Dexie, { Table } from 'dexie';
 
 // Define interfaces for our database tables
@@ -24,12 +25,13 @@ export interface Transaction {
   type: 'buy' | 'sell';
   shares: number;
   price: number;
-  currency: string;
+  amount: number;
   date: Date;
-  notes?: string;
+  note?: string;
 }
 
 export interface Currency {
+  id: number; // Adding id property to match the expected type
   code: string;
   name: string;
   symbol: string;
@@ -61,7 +63,7 @@ class StockScribeDB extends Dexie {
       users: '++id, username, email',
       stocks: '++id, ticker, userId, [userId+ticker]',
       transactions: '++id, stockId, userId, type, date, [userId+date], [stockId+date]',
-      currencies: 'code, name'
+      currencies: '++id, code, name'  // Updated to include id as auto-incrementing primary key
     });
     
     // Add settings table in version 2
@@ -77,6 +79,7 @@ export const db = new StockScribeDB();
 // Default currencies
 export const defaultCurrencies: Currency[] = [
   { 
+    id: 1,
     code: 'USD', 
     name: 'US Dollar', 
     symbol: '$', 
@@ -84,6 +87,7 @@ export const defaultCurrencies: Currency[] = [
     lastUpdated: new Date() 
   },
   { 
+    id: 2,
     code: 'EUR', 
     name: 'Euro', 
     symbol: '€', 
@@ -91,6 +95,7 @@ export const defaultCurrencies: Currency[] = [
     lastUpdated: new Date() 
   },
   { 
+    id: 3,
     code: 'GBP', 
     name: 'British Pound', 
     symbol: '£', 
@@ -98,6 +103,7 @@ export const defaultCurrencies: Currency[] = [
     lastUpdated: new Date() 
   },
   { 
+    id: 4,
     code: 'JPY', 
     name: 'Japanese Yen', 
     symbol: '¥', 
@@ -115,6 +121,11 @@ export async function initializeDatabase() {
     // Add default currencies
     await db.currencies.bulkAdd(defaultCurrencies);
   }
+}
+
+// Add getStock function that was missing
+export async function getStock(ticker: string): Promise<Stock | undefined> {
+  return await db.stocks.where('ticker').equals(ticker).first();
 }
 
 // Helper function to calculate profit/loss for a transaction

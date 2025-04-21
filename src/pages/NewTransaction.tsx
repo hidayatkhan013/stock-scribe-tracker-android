@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { db, addTransaction, getStock, addStock, getUserSettings } from '@/lib/db';
+import { db, addTransaction, getStock, addStock, getUserSettings, Currency } from '@/lib/db';
 import AppLayout from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/select';
 
 const formSchema = z.object({
-  type: z.enum(["Buy", "Sell"]),
+  type: z.enum(["buy", "sell"]),
   ticker: z.string().min(1, { message: "Ticker symbol is required" }),
   stockName: z.string().min(1, { message: "Stock name is required" }),
   shares: z.coerce.number().positive({ message: "Must be a positive number" }),
@@ -53,13 +53,13 @@ const NewTransaction = () => {
   const { toast } = useToast();
   const { currentUser } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [currencies, setCurrencies] = useState<{ id: number; code: string; name: string }[]>([]);
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [defaultCurrency, setDefaultCurrency] = useState('USD');
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      type: "Buy",
+      type: "buy",
       ticker: "",
       stockName: "",
       shares: undefined,
@@ -155,6 +155,7 @@ const NewTransaction = () => {
           ticker: data.ticker,
           name: data.stockName,
           currency: data.currency,
+          userId: currentUser.id,
         });
       }
 
@@ -216,7 +217,7 @@ const NewTransaction = () => {
                           className="flex space-x-1"
                         >
                           <div className="flex items-center space-x-2 flex-1">
-                            <RadioGroupItem value="Buy" id="buy" />
+                            <RadioGroupItem value="buy" id="buy" />
                             <Label
                               htmlFor="buy"
                               className="flex-1 py-2 rounded-md text-center cursor-pointer bg-green-50 hover:bg-green-100 border border-green-200"
@@ -225,7 +226,7 @@ const NewTransaction = () => {
                             </Label>
                           </div>
                           <div className="flex items-center space-x-2 flex-1">
-                            <RadioGroupItem value="Sell" id="sell" />
+                            <RadioGroupItem value="sell" id="sell" />
                             <Label
                               htmlFor="sell"
                               className="flex-1 py-2 rounded-md text-center cursor-pointer bg-red-50 hover:bg-red-100 border border-red-200"
