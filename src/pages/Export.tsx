@@ -1,4 +1,5 @@
-import { useState } from 'react';
+
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,11 +20,11 @@ import {
   PopoverTrigger 
 } from '@/components/ui/popover';
 import { format, subMonths } from 'date-fns';
-import { CalendarIcon, FileText, FileDown } from 'lucide-react';
+import { CalendarIcon, FileText, FileDown, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { db, getTransactionsForUser, getPortfolioSummary, getProfitLossReport } from '@/lib/db';
-import { downloadCSV, downloadPDF } from '@/utils/fileUtils';
+import { downloadCSV, downloadPDF, isAndroid, isCapacitorNative } from '@/utils/fileUtils';
 
 const Export = () => {
   const { currentUser } = useAuth();
@@ -41,6 +42,12 @@ const Export = () => {
     fullPath?: string;
     data: any[];
   }[]>([]);
+  const [isAndroidDevice, setIsAndroidDevice] = useState(false);
+
+  // Check if running on Android device
+  useEffect(() => {
+    setIsAndroidDevice(isAndroid() && isCapacitorNative());
+  }, []);
 
   const handleHistoryClick = (fileName: string, type: string, data: any[], fullPath?: string) => {
     if (type === 'PDF') {
@@ -118,6 +125,9 @@ const Export = () => {
         return;
       }
       
+      // Reset the global file path variable before export
+      window.lastGeneratedFilePath = undefined;
+      
       let exportSuccess = false;
       if (exportType === 'csv') {
         exportSuccess = await downloadCSV(data, fileName);
@@ -125,7 +135,18 @@ const Export = () => {
         exportSuccess = await downloadPDF(data, fileName, currentUser?.username || currentUser?.email || "User");
       }
       
+      // Small delay to ensure file operation completes
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       if (exportSuccess) {
+        // On Android, show additional information about file location
+        if (isAndroidDevice && window.lastGeneratedFilePath) {
+          toast({
+            title: 'Export Successful',
+            description: `File saved to: ${window.lastGeneratedFilePath}`,
+          });
+        }
+        
         const newExportHistory = [
           ...exportHistory,
           {
@@ -269,6 +290,16 @@ const Export = () => {
               </div>
             </div>
 
+            {isAndroidDevice && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 text-sm text-yellow-800">
+                <p className="font-medium">Android Storage Access</p>
+                <p className="mt-1">
+                  For Android 10+, make sure to grant storage permissions when prompted. 
+                  Files will be saved to your Download/StockScribe folder.
+                </p>
+              </div>
+            )}
+
             <div className="pt-4">
               <Button
                 className="w-full sm:w-auto"
@@ -277,7 +308,7 @@ const Export = () => {
               >
                 {isLoading ? (
                   <>
-                    <div className="animate-spin mr-2 h-4 w-4 border-2 border-current border-t-transparent rounded-full"></div>
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                     Exporting...
                   </>
                 ) : (
@@ -313,7 +344,7 @@ const Export = () => {
                         {format(export_.date, "MMM dd, yyyy HH:mm")} - {export_.dataType}
                       </p>
                       {export_.fullPath && (
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-gray-500 mt-1 break-all">
                           Path: {export_.fullPath}
                         </p>
                       )}
