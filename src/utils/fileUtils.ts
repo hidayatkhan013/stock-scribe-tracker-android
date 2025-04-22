@@ -1,4 +1,3 @@
-
 // Use dynamic imports for Capacitor modules to prevent build issues
 // These types are just for TypeScript and won't be included in the final bundle
 type FilesystemPlugin = {
@@ -199,11 +198,14 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
           encoding: 'UTF8'
         });
 
-        // Get URI for the saved file to show in toast
+        // Get full URI for the saved file
         const fileInfo = await Filesystem.getUri({
           path: saveLocation.path,
           directory: saveLocation.directory
         });
+
+        // Log the full file path
+        console.log('CSV saved at full path:', fileInfo.uri);
 
         if (Toast) {
           await Toast.show({
@@ -387,11 +389,14 @@ export const downloadPDF = async (
         encoding: 'UTF8'
       });
 
-      // Get URI for the saved file to show in toast
+      // Get full URI for the saved file
       const fileInfo = await Filesystem.getUri({
         path: saveLocation.path,
         directory: saveLocation.directory
       });
+
+      // Log the full file path
+      console.log('PDF saved at full path:', fileInfo.uri);
 
       if (Toast) {
         await Toast.show({
@@ -432,4 +437,3 @@ const downloadBrowserFile = (content: string, fileName: string, mimeType: string
   document.body.removeChild(link);
   return true;
 };
-
