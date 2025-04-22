@@ -16,10 +16,11 @@ const config: CapacitorConfig = {
       keystorePassword: null,
       keystoreAliasPassword: null,
     },
-    // Add Android permissions
+    // Update Android permissions for Android 10 compatibility
     permissions: [
       "android.permission.READ_EXTERNAL_STORAGE",
       "android.permission.WRITE_EXTERNAL_STORAGE",
+      "android.permission.MANAGE_EXTERNAL_STORAGE", // For Android 11+
       "android.permission.MANAGE_DOCUMENTS"
     ]
   },
