@@ -28,6 +28,13 @@ type CapacitorGlobal = {
   isNativePlatform: () => boolean;
 };
 
+// Add a global variable to store the last generated file path
+declare global {
+  interface Window {
+    lastGeneratedFilePath?: string;
+  }
+}
+
 /**
  * Detects if the application is running on an Android device
  */
@@ -203,6 +210,9 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
           path: saveLocation.path,
           directory: saveLocation.directory
         });
+
+        // Set the global variable with the full file path
+        window.lastGeneratedFilePath = fileInfo.uri;
 
         // Enhanced logging with more context
         console.log(`CSV File Generated: ${fileName}`);
@@ -396,6 +406,9 @@ export const downloadPDF = async (
         path: saveLocation.path,
         directory: saveLocation.directory
       });
+
+      // Set the global variable with the full file path
+      window.lastGeneratedFilePath = fileInfo.uri;
 
       // Enhanced logging with more context
       console.log(`PDF File Generated: ${fileName}`);

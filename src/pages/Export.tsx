@@ -38,14 +38,19 @@ const Export = () => {
     dataType: string;
     date: Date;
     fileName: string;
+    fullPath?: string;
     data: any[];
   }[]>([]);
 
-  const handleHistoryClick = (fileName: string, type: string, data: any[]) => {
+  const handleHistoryClick = (fileName: string, type: string, data: any[], fullPath?: string) => {
     if (type === 'PDF') {
       downloadPDF(data, fileName.replace('.pdf', ''));
     } else {
       downloadCSV(data, fileName.replace('.csv', ''));
+    }
+    
+    if (fullPath) {
+      console.log(`Full file path: ${fullPath}`);
     }
   };
 
@@ -128,6 +133,7 @@ const Export = () => {
             dataType: dataType,
             date: new Date(),
             fileName: `${fileName}.${exportType}`,
+            fullPath: window.lastGeneratedFilePath,
             data: data
           }
         ];
@@ -299,13 +305,18 @@ const Export = () => {
                   <div 
                     key={index} 
                     className="flex justify-between items-center border-b pb-2 hover:bg-accent/5 cursor-pointer p-2 rounded-md transition-colors"
-                    onClick={() => handleHistoryClick(export_.fileName, export_.type, export_.data)}
+                    onClick={() => handleHistoryClick(export_.fileName, export_.type, export_.data, export_.fullPath)}
                   >
                     <div>
                       <p className="font-medium">{export_.fileName}</p>
                       <p className="text-sm text-muted-foreground">
                         {format(export_.date, "MMM dd, yyyy HH:mm")} - {export_.dataType}
                       </p>
+                      {export_.fullPath && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Path: {export_.fullPath}
+                        </p>
+                      )}
                     </div>
                     <Badge variant="outline" className="hover:bg-primary/10">{export_.type}</Badge>
                   </div>
