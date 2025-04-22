@@ -204,8 +204,10 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
           directory: saveLocation.directory
         });
 
-        // Log the full file path
-        console.log('CSV saved at full path:', fileInfo.uri);
+        // Enhanced logging with more context
+        console.log(`CSV File Generated: ${fileName}`);
+        console.log(`Save Directory: ${saveLocation.directory}`);
+        console.log(`Full File Path: ${fileInfo.uri}`);
 
         if (Toast) {
           await Toast.show({
@@ -395,8 +397,10 @@ export const downloadPDF = async (
         directory: saveLocation.directory
       });
 
-      // Log the full file path
-      console.log('PDF saved at full path:', fileInfo.uri);
+      // Enhanced logging with more context
+      console.log(`PDF File Generated: ${fileName}`);
+      console.log(`Save Directory: ${saveLocation.directory}`);
+      console.log(`Full File Path: ${fileInfo.uri}`);
 
       if (Toast) {
         await Toast.show({
@@ -404,6 +408,7 @@ export const downloadPDF = async (
           duration: "long"
         });
       }
+      
       return true;
     } catch (error) {
       console.error('Android file write error:', error);
