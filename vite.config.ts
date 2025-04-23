@@ -22,12 +22,26 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     rollupOptions: {
-      // Externalize Capacitor plugins to prevent build errors
+      // Explicitly mark Capacitor plugins as external - this prevents build errors
+      // when they're imported but allows them to be used at runtime
       external: [
         '@capacitor/core',
         '@capacitor/filesystem',
         '@capacitor/toast'
       ]
+    },
+    commonjsOptions: {
+      // These settings help with dynamic imports of Capacitor plugins
+      transformMixedEsModules: true,
+      exclude: [
+        'node_modules/@capacitor/core/**',
+        'node_modules/@capacitor/filesystem/**',
+        'node_modules/@capacitor/toast/**'
+      ]
     }
+  },
+  optimizeDeps: {
+    // Exclude Capacitor plugins from optimization to avoid build issues
+    exclude: ['@capacitor/core', '@capacitor/filesystem', '@capacitor/toast']
   }
 }));

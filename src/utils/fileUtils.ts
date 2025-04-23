@@ -1,4 +1,3 @@
-
 // Use dynamic imports for Capacitor modules to prevent build issues
 // These types are just for TypeScript and won't be included in the final bundle
 type FilesystemPlugin = {
@@ -61,9 +60,29 @@ const getFilesystem = async (): Promise<FilesystemPlugin | null> => {
   if (isCapacitorNative()) {
     try {
       console.log('Loading Filesystem plugin...');
-      const capacitorModule = await import('@capacitor/filesystem');
-      console.log('Filesystem plugin loaded successfully', capacitorModule.Filesystem);
-      return capacitorModule.Filesystem;
+      // Use a try-catch around the import to handle any import errors
+      let filesystemModule;
+      try {
+        filesystemModule = await import('@capacitor/filesystem');
+        console.log('Filesystem module imported successfully', filesystemModule.Filesystem);
+        return filesystemModule.Filesystem;
+      } catch (importError) {
+        console.error('Error importing Filesystem module:', importError);
+        
+        // Try alternative import approach with explicit error handling
+        try {
+          // Sometimes dynamic imports need to be handled differently
+          const capacitorNamespace = (window as any).Capacitor;
+          if (capacitorNamespace && capacitorNamespace.Plugins && capacitorNamespace.Plugins.Filesystem) {
+            console.log('Using Capacitor namespace for Filesystem plugin');
+            return capacitorNamespace.Plugins.Filesystem;
+          }
+          throw new Error('Filesystem not available in Capacitor plugins namespace');
+        } catch (fallbackError) {
+          console.error('Fallback filesystem access failed:', fallbackError);
+          return null;
+        }
+      }
     } catch (error) {
       console.error('Error loading Filesystem plugin:', error);
       return null;
@@ -76,9 +95,27 @@ const getFilesystem = async (): Promise<FilesystemPlugin | null> => {
 const getToast = async (): Promise<ToastPlugin | null> => {
   if (isCapacitorNative()) {
     try {
-      const toastModule = await import('@capacitor/toast');
-      console.log('Toast plugin loaded successfully');
-      return toastModule.Toast;
+      // Use a try-catch around the import to handle any import errors
+      try {
+        const toastModule = await import('@capacitor/toast');
+        console.log('Toast module imported successfully');
+        return toastModule.Toast;
+      } catch (importError) {
+        console.error('Error importing Toast module:', importError);
+        
+        // Try alternative import approach
+        try {
+          const capacitorNamespace = (window as any).Capacitor;
+          if (capacitorNamespace && capacitorNamespace.Plugins && capacitorNamespace.Plugins.Toast) {
+            console.log('Using Capacitor namespace for Toast plugin');
+            return capacitorNamespace.Plugins.Toast;
+          }
+          throw new Error('Toast not available in Capacitor plugins namespace');
+        } catch (fallbackError) {
+          console.error('Fallback toast access failed:', fallbackError);
+          return null;
+        }
+      }
     } catch (error) {
       console.error('Error loading Toast plugin:', error);
       return null;
@@ -637,4 +674,101 @@ const downloadBrowserFile = (content: string, fileName: string, mimeType: string
   link.click();
   document.body.removeChild(link);
   return true;
+};
+
+/**
+ * Standalone function to test Capacitor permissions that can be called from anywhere
+ * Does not require full fileUtils functionality
+ */
+export const testCapacitorPermissions = async (): Promise<{success: boolean; message: string}> => {
+  try {
+    console.log('🧪 Testing Capacitor permissions...');
+    
+    if (!isAndroid() || !isCapacitorNative()) {
+      return { 
+        success: false, 
+        message: 'Not running on Android native platform' 
+      };
+    }
+    
+    console.log('✅ Detected Android native platform');
+    
+    // Test if Capacitor is available
+    const capacitor = (window as any).Capacitor;
+    if (!capacitor) {
+      return { 
+        success: false, 
+        message: 'Capacitor not available' 
+      };
+    }
+    
+    console.log('✅ Capacitor namespace found:', capacitor);
+    console.log('📱 Platform:', capacitor.getPlatform());
+    console.log('🔌 Plugins available:', capacitor.Plugins ? Object.keys(capacitor.Plugins) : 'None');
+    
+    // Try to load Filesystem
+    let filesystem;
+    try {
+      // Try direct import
+      filesystem = (await import('@capacitor/filesystem')).Filesystem;
+      console.log('✅ Successfully imported Filesystem module');
+    } catch (importError) {
+      console.error('❌ Failed to import Filesystem module:', importError);
+      
+      // Try to access from Capacitor plugins namespace as backup
+      if (capacitor.Plugins && capacitor.Plugins.Filesystem) {
+        filesystem = capacitor.Plugins.Filesystem;
+        console.log('✅ Found Filesystem in Capacitor.Plugins namespace');
+      } else {
+        return {
+          success: false,
+          message: `Failed to import Capacitor modules: ${importError}`
+        };
+      }
+    }
+    
+    // Check if we have a working Filesystem object
+    if (!filesystem) {
+      return {
+        success: false,
+        message: 'Filesystem plugin not available after all attempts'
+      };
+    }
+    
+    // Check that the necessary methods exist
+    if (!filesystem.requestPermissions || !filesystem.checkPermissions) {
+      return {
+        success: false,
+        message: 'Filesystem plugin missing required methods'
+      };
+    }
+    
+    // Try checking permissions
+    try {
+      const permissionStatus = await filesystem.checkPermissions();
+      console.log('📋 Current permissions:', permissionStatus);
+      
+      // Now try requesting permissions
+      console.log('🔑 Requesting permissions...');
+      const requestResult = await filesystem.requestPermissions();
+      console.log('📋 Permission request result:', requestResult);
+      
+      return {
+        success: true,
+        message: `Permissions test complete. Status: ${requestResult.publicStorage}`
+      };
+    } catch (permissionError) {
+      console.error('❌ Permission operation failed:', permissionError);
+      return {
+        success: false,
+        message: `Permission operation failed: ${permissionError.message || permissionError}`
+      };
+    }
+  } catch (error) {
+    console.error('❌ Test failed with error:', error);
+    return {
+      success: false,
+      message: `Test failed: ${error.message || String(error)}`
+    };
+  }
 };

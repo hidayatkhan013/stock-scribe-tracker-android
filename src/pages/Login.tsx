@@ -1,108 +1,147 @@
 
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/components/ui/use-toast';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { initializeDatabase } from '@/lib/db';
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useAuth } from "@/contexts/AuthContext";
+
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { useToast } from "@/hooks/use-toast";
+import { isAndroid, isCapacitorNative } from "@/utils/fileUtils";
+import CapacitorTester from "@/components/CapacitorTester";
+
+// Define the form schema with Zod
+const LoginSchema = z.object({
+  username: z.string().min(1, { message: "Username is required" }),
+  password: z.string().min(1, { message: "Password is required" }),
+});
+
+// Define the form values type from the schema
+type LoginFormValues = z.infer<typeof LoginSchema>;
 
 const Login = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
   const navigate = useNavigate();
+  const { login } = useAuth();
   const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
+  const isAndroidDevice = isAndroid() && isCapacitorNative();
+  
+  // Initialize the form with react-hook-form and the schema
+  const form = useForm<LoginFormValues>({
+    resolver: zodResolver(LoginSchema),
+    defaultValues: {
+      username: "",
+      password: "",
+    },
+  });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!username || !password) {
-      toast({
-        title: 'Error',
-        description: 'Please enter both username and password',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
+  // Handle form submission
+  const onSubmit = async (values: LoginFormValues) => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      
-      // Initialize database if needed
-      await initializeDatabase();
-      
-      await login(username, password);
-      navigate('/');
+      const result = await login(values.username, values.password);
+      if (result.success) {
+        toast({
+          title: "Login successful",
+          description: "Welcome back!",
+        });
+        navigate("/dashboard");
+      } else {
+        toast({
+          title: "Login failed",
+          description: result.error || "Invalid username or password",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
-      console.error('Login error:', error);
       toast({
-        title: 'Login Failed',
-        description: error instanceof Error ? error.message : 'Invalid username or password',
-        variant: 'destructive',
+        title: "Login error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
       });
+      console.error("Login error:", error);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">StockScribe</CardTitle>
-          <p className="text-center text-muted-foreground">Track your stock investments with ease</p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                placeholder="Enter your username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-              </div>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? (
-                <div className="flex items-center">
-                  <div className="animate-spin mr-2 h-4 w-4 border-2 border-current border-t-transparent rounded-full"></div>
-                  Logging In...
-                </div>
-              ) : (
-                'Login'
-              )}
+    <div className="flex items-center justify-center min-h-screen bg-gray-100 p-4">
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold tracking-tight">StockScribe</h1>
+          <p className="text-sm text-gray-500 mt-2">Track your stock investments</p>
+        </div>
+        
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle className="text-2xl">Login</CardTitle>
+            <CardDescription>Enter your credentials to access your account</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="username"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Username</FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="Enter your username" 
+                          {...field} 
+                          autoComplete="username"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="password" 
+                          placeholder="Enter your password" 
+                          {...field}
+                          autoComplete="current-password"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <Button 
+                  type="submit" 
+                  className="w-full" 
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Logging in..." : "Login"}
+                </Button>
+              </form>
+            </Form>
+          </CardContent>
+          <CardFooter className="flex justify-center">
+            <Button variant="link" onClick={() => navigate("/register")}>
+              Don't have an account? Register
             </Button>
-          </form>
-        </CardContent>
-        <CardFooter className="flex justify-center">
-          <Button 
-            variant="link" 
-            onClick={() => navigate('/register')}
-            disabled={isLoading}
-          >
-            Don't have an account? Sign Up
-          </Button>
-        </CardFooter>
-      </Card>
+          </CardFooter>
+        </Card>
+        
+        {/* Capacitor Permission Tester for Android */}
+        {isAndroidDevice && <CapacitorTester />}
+      </div>
     </div>
   );
 };
