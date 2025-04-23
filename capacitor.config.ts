@@ -24,7 +24,9 @@ const config: CapacitorConfig = {
       "android.permission.MANAGE_DOCUMENTS",
       "android.permission.READ_MEDIA_IMAGES", // For Android 13+
       "android.permission.READ_MEDIA_VIDEO",  // For Android 13+
-      "android.permission.READ_MEDIA_AUDIO"   // For Android 13+
+      "android.permission.READ_MEDIA_AUDIO",   // For Android 13+
+      "android.permission.INTERNET",
+      "android.permission.ACCESS_NETWORK_STATE"
     ]
   },
   plugins: {

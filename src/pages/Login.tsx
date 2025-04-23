@@ -23,6 +23,18 @@ const LoginSchema = z.object({
 // Define the form values type from the schema
 type LoginFormValues = z.infer<typeof LoginSchema>;
 
+// Define types for login response
+interface LoginErrorResponse {
+  success: false;
+  error: string;
+}
+
+interface LoginSuccessResponse {
+  success: true;
+}
+
+type LoginResponse = LoginSuccessResponse | LoginErrorResponse | User;
+
 const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -53,9 +65,11 @@ const Login = () => {
           });
           navigate("/dashboard");
         } else {
+          // Type assertion to fix the TypeScript error
+          const errorResult = result as LoginErrorResponse;
           toast({
             title: "Login failed",
-            description: result.error || "Invalid username or password",
+            description: errorResult.error || "Invalid username or password",
             variant: "destructive",
           });
         }

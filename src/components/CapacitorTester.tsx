@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { testCapacitorPermissions, isAndroid, isCapacitorNative } from '@/utils/fileUtils';
 import { useToast } from '@/hooks/use-toast';
@@ -12,6 +12,24 @@ const CapacitorTester: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const isRunningOnAndroid = isAndroid() && isCapacitorNative();
+  const [capacitorReady, setCapacitorReady] = useState(false);
+
+  // Check if Capacitor is ready
+  useEffect(() => {
+    const checkCapacitorStatus = async () => {
+      try {
+        // Simple check to see if Capacitor modules can be imported
+        const { Capacitor } = await import('@capacitor/core');
+        setCapacitorReady(true);
+        console.log('Capacitor is ready to use');
+      } catch (error) {
+        console.error('Error loading Capacitor modules:', error);
+        setCapacitorReady(false);
+      }
+    };
+    
+    checkCapacitorStatus();
+  }, []);
 
   // If not running on Android, don't show the component
   if (!isRunningOnAndroid) {
@@ -22,6 +40,16 @@ const CapacitorTester: React.FC = () => {
     setLoading(true);
     try {
       console.log('Starting Capacitor permissions test');
+      
+      if (!capacitorReady) {
+        toast({
+          title: 'Capacitor Not Ready',
+          description: 'The Capacitor plugins failed to load. Please check console for errors.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      
       const result = await testCapacitorPermissions();
       
       if (result.success) {
@@ -58,6 +86,11 @@ const CapacitorTester: React.FC = () => {
             <p className="text-sm text-amber-700">
               Test Capacitor storage permissions directly from this screen.
             </p>
+            {!capacitorReady && (
+              <p className="text-xs text-red-600 mt-1">
+                Warning: Capacitor plugins failed to load. This may not work properly.
+              </p>
+            )}
           </div>
         </div>
         

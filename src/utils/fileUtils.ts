@@ -772,3 +772,171 @@ export const testCapacitorPermissions = async (): Promise<{success: boolean; mes
     };
   }
 };
+
+/**
+ * Saves data as a CSV file
+ * @param fileName Name of the file without extension
+ * @param csvContent Content of the CSV file
+ */
+export const saveAsCSV = async (
+  fileName: string,
+  csvContent: string
+): Promise<SaveResult> => {
+  try {
+    // Log that we're saving the file
+    console.log(`Saving file ${fileName} as CSV...`);
+
+    // Check if running on Android device in app
+    const isAndroidDevice = isAndroid() && isCapacitorNative();
+    console.log(`Running on Android device in app: ${isAndroidDevice}`);
+
+    if (isAndroidDevice) {
+      try {
+        // Import Capacitor modules
+        const { Filesystem } = await import('@capacitor/core');
+        const { Toast } = await import('@capacitor/toast');
+        
+        // First, try to request permissions
+        console.log('Requesting permissions for Android file save...');
+        await requestStoragePermission();
+        
+        // Get the save location based on Android version
+        const saveLocation = await getAndroidSaveLocation(fileName, "csv");
+        console.log('Save location determined:', saveLocation);
+
+        // Write the file - Fix the encoding to 'utf8' (correct case)
+        console.log(`✏️ Writing file to ${saveLocation.directory}/${saveLocation.path}`);
+        const writeResult = await Filesystem.writeFile({
+          path: saveLocation.path,
+          data: csvContent,
+          directory: saveLocation.directory,
+          encoding: 'utf8'  // Changed from 'UTF8' to 'utf8'
+        });
+        
+        console.log('Write result:', writeResult);
+        
+        // Show success message
+        await Toast.show({
+          text: `File successfully saved: ${saveLocation.path}`,
+          duration: 'long'
+        });
+        
+        return {
+          success: true,
+          message: `File saved to ${saveLocation.directory}/${saveLocation.path}`,
+          filePath: `${saveLocation.directory}/${saveLocation.path}`
+        };
+      } catch (error) {
+        console.error("Error saving file on Android:", error);
+        
+        // Show error message
+        const { Toast } = await import('@capacitor/toast');
+        await Toast.show({
+          text: `Error saving file: ${error.message || 'Unknown error'}`,
+          duration: 'long'
+        });
+        
+        return {
+          success: false,
+          message: `Error saving file: ${error.message || 'Unknown error'}`
+        };
+      }
+    } else {
+      // For web browsers
+      return downloadBrowserFile(csvContent, `${fileName}.csv`, 'text/csv;charset=utf-8;');
+    }
+  } catch (error) {
+    console.error("Error in saveAsCSV:", error);
+    return {
+      success: false,
+      message: `Error saving file: ${error.message || 'Unknown error'}`
+    };
+  }
+};
+
+/**
+ * Saves data as an HTML file
+ * @param fileName Name of the file without extension
+ * @param htmlContent Content of the HTML file
+ */
+export const saveAsHTML = async (fileName: string, htmlContent: string): Promise<SaveResult> => {
+  try {
+    console.log(`Saving file ${fileName} as HTML...`);
+
+    // Check if running on Android device in app
+    const isAndroidDevice = isAndroid() && isCapacitorNative();
+    console.log(`Running on Android device in app: ${isAndroidDevice}`);
+
+    if (isAndroidDevice) {
+      // Import Capacitor modules
+      const { Filesystem } = await import('@capacitor/core');
+      const { Toast } = await import('@capacitor/toast');
+      
+      // First, try to request permissions
+      console.log('Requesting permissions for Android file save...');
+      await requestStoragePermission();
+      
+      // Get the save location based on Android version
+      const saveLocation = await getAndroidSaveLocation(fileName, "html");
+      console.log('Save location determined:', saveLocation);
+
+      // Write the file - Fix the encoding to 'utf8' (correct case)
+      console.log(`✏️ Writing file to ${saveLocation.directory}/${saveLocation.path}`);
+      const writeResult = await Filesystem.writeFile({
+        path: saveLocation.path,
+        data: htmlContent,
+        directory: saveLocation.directory,
+        encoding: 'utf8'  // Changed from 'UTF8' to 'utf8'
+      });
+      
+      console.log('Write result:', writeResult);
+      
+      // Show success message
+      await Toast.show({
+        text: `File successfully saved: ${saveLocation.path}`,
+        duration: 'long'
+      });
+      
+      return {
+        success: true,
+        message: `File saved to ${saveLocation.directory}/${saveLocation.path}`,
+        filePath: `${saveLocation.directory}/${saveLocation.path}`
+      };
+    } else {
+      // For web browsers
+      return downloadBrowserFile(htmlContent, `${fileName}.html`, 'text/html');
+    }
+  } catch (error) {
+    console.error("Error saving HTML file:", error);
+    return {
+      success: false,
+      message: `Error saving file: ${error.message || 'Unknown error'}`
+    };
+  }
+};
+
+interface SaveResult {
+  success: boolean;
+  message: string;
+  filePath?: string;
+}
+
+/**
+ * Requests storage permission for Android
+ */
+const requestStoragePermission = async (): Promise<void> => {
+  if (!isAndroid() || !isCapacitorNative()) return;
+
+  try {
+    const Filesystem = await getFilesystem();
+    if (!Filesystem) {
+      console.error('Filesystem plugin not available for permissions');
+      throw new Error('Filesystem plugin not available');
+    }
+
+    console.log('🔑 Requesting storage permissions before save...');
+    await ensureStoragePermissions();
+  } catch (error) {
+    console.error('Error requesting storage permissions:', error);
+  }
+};
