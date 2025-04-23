@@ -60,7 +60,9 @@ export const isCapacitorNative = (): boolean => {
 const getFilesystem = async (): Promise<FilesystemPlugin | null> => {
   if (isCapacitorNative()) {
     try {
+      console.log('Loading Filesystem plugin...');
       const capacitorModule = await import('@capacitor/filesystem');
+      console.log('Filesystem plugin loaded successfully');
       return capacitorModule.Filesystem;
     } catch (error) {
       console.error('Error loading Filesystem plugin:', error);
@@ -85,41 +87,77 @@ const getToast = async (): Promise<ToastPlugin | null> => {
 };
 
 /**
- * Checks and requests storage permissions on Android
- * This function will make multiple permission requests if needed
+ * CRITICAL: Explicitly request storage permissions for Android
+ * This function force-requests permissions multiple times with delays
  */
 const ensureStoragePermissions = async (): Promise<boolean> => {
   if (!isAndroid() || !isCapacitorNative()) return true;
 
   try {
     const Filesystem = await getFilesystem();
-    if (!Filesystem) return false;
+    if (!Filesystem) {
+      console.error('Filesystem plugin not available for permissions');
+      return false;
+    }
 
-    console.log('Checking and requesting storage permissions...');
+    console.log('⚠️ ACTIVELY REQUESTING STORAGE PERMISSIONS...');
     
     // First check current permissions
     const checkResult = await Filesystem.checkPermissions();
     console.log('Initial permission status:', checkResult);
     
     if (checkResult.publicStorage !== 'granted') {
-      console.log('Permissions not granted, requesting permissions...');
+      // First request - CRITICAL for Android 10
+      console.log('🔴 Permissions not granted, making FIRST explicit request...');
+      const Toast = await getToast();
+      if (Toast) {
+        await Toast.show({
+          text: 'Please grant storage permissions to save files',
+          duration: 'long'
+        });
+      }
       
-      // First request
       const requestResult = await Filesystem.requestPermissions();
-      console.log('Permission request result:', requestResult);
+      console.log('First permission request result:', requestResult);
       
-      // For Android 10+, sometimes we need multiple permission requests
+      // For Android 10+, we need multiple permission requests
       if (requestResult.publicStorage !== 'granted') {
-        console.log('Permissions not granted on first attempt, trying again...');
+        console.log('🔴 Permissions not granted on first attempt, making SECOND request after delay...');
+        
+        // Show toast before second attempt
+        if (Toast) {
+          await Toast.show({
+            text: 'Storage access is required - please grant permissions',
+            duration: 'long'
+          });
+        }
+        
+        // Add delay before second attempt
+        await new Promise(resolve => setTimeout(resolve, 1000));
         const secondAttempt = await Filesystem.requestPermissions();
         console.log('Second permission request result:', secondAttempt);
         
-        // If still not granted, try one more time after a delay
+        // If still not granted, try one final time with longer delay
         if (secondAttempt.publicStorage !== 'granted') {
-          console.log('Permissions still not granted, trying one last time after delay...');
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          console.log('🔴 Permissions STILL not granted, making FINAL attempt after longer delay...');
+          
+          // Show toast before final attempt
+          if (Toast) {
+            await Toast.show({
+              text: 'Final attempt: Please grant storage permissions now',
+              duration: 'long'
+            });
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 2000));
           const finalAttempt = await Filesystem.requestPermissions();
           console.log('Final permission request result:', finalAttempt);
+          
+          if (finalAttempt.publicStorage !== 'granted') {
+            console.log('⛔ All permission attempts failed - will try to save anyway');
+            return false;
+          }
+          
           return finalAttempt.publicStorage === 'granted';
         }
         
@@ -129,6 +167,7 @@ const ensureStoragePermissions = async (): Promise<boolean> => {
       return requestResult.publicStorage === 'granted';
     }
     
+    console.log('✅ Storage permissions already granted');
     return checkResult.publicStorage === 'granted';
   } catch (error) {
     console.error('Permission check/request failed:', error);
@@ -145,12 +184,14 @@ const ensureDirectoryExists = async (path: string, directory: string): Promise<b
     const Filesystem = await getFilesystem();
     if (!Filesystem) return false;
 
+    console.log(`Creating directory if needed: ${directory}/${path}`);
+
     await Filesystem.mkdir({
       path,
       directory,
       recursive: true
     });
-    console.log(`Directory created: ${directory}/${path}`);
+    console.log(`✅ Directory created: ${directory}/${path}`);
     return true;
   } catch (error) {
     // Directory might already exist, which is fine
@@ -162,63 +203,84 @@ const ensureDirectoryExists = async (path: string, directory: string): Promise<b
 /**
  * Tries multiple save locations for Android files
  * Returns the first successful location or falls back to app documents
+ * Optimized for Android 10+ compatibility
  */
 const getAndroidSaveLocation = async (fileName: string, ext: string): Promise<{
   path: string;
   directory: string;
   displayPath: string;
 }> => {
-  // First, try to ensure we have permissions
-  await ensureStoragePermissions();
-  console.log('Storage permissions check completed');
+  // First, force permissions check/request
+  const permissionsGranted = await ensureStoragePermissions();
+  console.log('Storage permissions check completed, granted:', permissionsGranted);
   
   // Try various Android storage options in order of preference
   const saveLocations = [
-    // First try: Download in external storage (preferred for Android 10+)
+    // First try: Download folder with no subfolder (most compatible for Android 10)
     {
       try: async () => {
-        console.log('Attempting to save to Downloads folder in external storage');
-        await ensureDirectoryExists('Download/StockScribe', 'EXTERNAL');
+        console.log('🔍 ATTEMPT 1: Trying to save directly to Downloads folder (best for Android 10)');
         return {
-          path: `Download/StockScribe/${fileName}.${ext}`,
-          directory: 'EXTERNAL',
-          displayPath: `Download/StockScribe/${fileName}.${ext}`
+          path: `${fileName}.${ext}`, // No subfolder
+          directory: 'EXTERNAL_STORAGE',
+          displayPath: `Downloads/${fileName}.${ext}`
         };
       }
     },
-    // Second try: Documents in external storage
+    // Second try: Download in external storage (preferred for modern Android)
     {
       try: async () => {
-        console.log('Attempting to save to Documents folder in external storage');
-        await ensureDirectoryExists('Documents/StockScribe', 'EXTERNAL');
+        console.log('🔍 ATTEMPT 2: Trying to save to Downloads folder in external storage');
+        await ensureDirectoryExists('Download', 'EXTERNAL');
         return {
-          path: `Documents/StockScribe/${fileName}.${ext}`,
+          path: `Download/${fileName}.${ext}`,
           directory: 'EXTERNAL',
-          displayPath: `Documents/StockScribe/${fileName}.${ext}`
+          displayPath: `Download/${fileName}.${ext}`
         };
       }
     },
-    // Third try: External files directory (For Android 10+)
+    // Third try: External directory root (simpler path for Android 10)
     {
       try: async () => {
-        console.log('Attempting to save to external files directory');
-        await ensureDirectoryExists('StockScribe', 'EXTERNAL_FILES');
+        console.log('🔍 ATTEMPT 3: Trying to save to external storage root');
         return {
-          path: `StockScribe/${fileName}.${ext}`,
+          path: `${fileName}.${ext}`,
+          directory: 'EXTERNAL',
+          displayPath: `External Storage/${fileName}.${ext}`
+        };
+      }
+    },
+    // Fourth try: Documents in external storage
+    {
+      try: async () => {
+        console.log('🔍 ATTEMPT 4: Trying to save to Documents folder in external storage');
+        await ensureDirectoryExists('Documents', 'EXTERNAL');
+        return {
+          path: `Documents/${fileName}.${ext}`,
+          directory: 'EXTERNAL',
+          displayPath: `Documents/${fileName}.${ext}`
+        };
+      }
+    },
+    // Fifth try: External files directory (For Android 10+)
+    {
+      try: async () => {
+        console.log('🔍 ATTEMPT 5: Trying to save to external files directory');
+        return {
+          path: `${fileName}.${ext}`,
           directory: 'EXTERNAL_FILES',
-          displayPath: `Files/StockScribe/${fileName}.${ext}`
+          displayPath: `Files/${fileName}.${ext}`
         };
       }
     },
-    // Fourth try: App-specific documents (most compatible fallback)
+    // Final fallback: App-specific documents (most compatible fallback)
     {
       try: async () => {
-        console.log('Falling back to app-specific documents directory');
-        await ensureDirectoryExists('StockScribe', 'DOCUMENTS');
+        console.log('🔍 FALLBACK: Using app-specific documents directory');
         return {
-          path: `StockScribe/${fileName}.${ext}`,
+          path: `${fileName}.${ext}`,
           directory: 'DOCUMENTS',
-          displayPath: `App Documents/StockScribe/${fileName}.${ext}`
+          displayPath: `App Documents/${fileName}.${ext}`
         };
       }
     }
@@ -228,7 +290,7 @@ const getAndroidSaveLocation = async (fileName: string, ext: string): Promise<{
   for (const location of saveLocations) {
     try {
       const result = await location.try();
-      console.log('Successfully determined save location:', result);
+      console.log('✅ Successfully determined save location:', result);
       return result;
     } catch (error) {
       console.error('Failed with this location, trying next:', error);
@@ -236,7 +298,7 @@ const getAndroidSaveLocation = async (fileName: string, ext: string): Promise<{
   }
   
   // Final fallback if all else fails - use app's document directory
-  console.log('All location attempts failed, using base app documents');
+  console.log('⚠️ All location attempts failed, using base app documents');
   return {
     path: `${fileName}.${ext}`,
     directory: 'DOCUMENTS',
@@ -251,6 +313,7 @@ const getAndroidSaveLocation = async (fileName: string, ext: string): Promise<{
  */
 export const downloadCSV = async (data: any[], fileName: string): Promise<boolean> => {
   if (!data.length) {
+    console.log('No data to export');
     return false;
   }
   
@@ -280,21 +343,26 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
     // For Android native app, use Capacitor Filesystem
     if (isAndroid() && isCapacitorNative()) {
       try {
-        console.log('Saving CSV file on Android...');
+        console.log('📝 Starting CSV file save on Android...');
         const Filesystem = await getFilesystem();
         const Toast = await getToast();
 
-        if (!Filesystem) throw new Error('Filesystem plugin not available');
+        if (!Filesystem) {
+          console.error('Filesystem plugin not available');
+          throw new Error('Filesystem plugin not available');
+        }
         
         // Force permission request before trying to save
+        console.log('🔑 Requesting storage permissions before save...');
         await ensureStoragePermissions();
         
         // Get the appropriate save location
+        console.log('📁 Determining optimal save location...');
         const saveLocation = await getAndroidSaveLocation(fileName, "csv");
         console.log('Save location determined:', saveLocation);
 
         // Write the file
-        console.log(`Writing file to ${saveLocation.directory}/${saveLocation.path}`);
+        console.log(`✏️ Writing file to ${saveLocation.directory}/${saveLocation.path}`);
         const writeResult = await Filesystem.writeFile({
           path: saveLocation.path,
           data: csvContent,
@@ -305,7 +373,7 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
         console.log('Write result:', writeResult);
 
         // Get full URI for the saved file
-        console.log('Getting file URI...');
+        console.log('🔍 Getting file URI...');
         const fileInfo = await Filesystem.getUri({
           path: saveLocation.path,
           directory: saveLocation.directory
@@ -313,11 +381,12 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
 
         // Set the global variable with the full file path
         window.lastGeneratedFilePath = fileInfo.uri;
+        console.log('🎯 Global path variable set to:', window.lastGeneratedFilePath);
 
         // Enhanced logging with more context
-        console.log(`CSV File Generated: ${fileName}`);
-        console.log(`Save Directory: ${saveLocation.directory}`);
-        console.log(`Full File Path: ${fileInfo.uri}`);
+        console.log(`✅ CSV File Generated: ${fileName}`);
+        console.log(`📂 Save Directory: ${saveLocation.directory}`);
+        console.log(`📄 Full File Path: ${fileInfo.uri}`);
 
         if (Toast) {
           await Toast.show({
@@ -328,11 +397,11 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
 
         return true;
       } catch (error) {
-        console.error('Android file write error:', error);
+        console.error('⛔ Android file write error:', error);
         const Toast = await getToast();
         if (Toast) {
           await Toast.show({
-            text: `Error saving file: ${(error as Error).message}`,
+            text: `Error saving file: ${(error as Error).message}. Please check app permissions.`,
             duration: 'long'
           });
         }
@@ -486,24 +555,26 @@ export const downloadPDF = async (
   // Android native file save with .html as "PDF"
   if (isAndroid() && isCapacitorNative()) {
     try {
-      console.log('Saving HTML/PDF file on Android...');
+      console.log('📝 Starting HTML/PDF file save on Android...');
       const Filesystem = await getFilesystem();
       const Toast = await getToast();
 
       if (!Filesystem) throw new Error('Filesystem plugin not available');
 
       // Force permission request before trying to save
+      console.log('🔑 Requesting storage permissions before save...');
       await ensureStoragePermissions();
       
       // Get the appropriate save location
+      console.log('📁 Determining optimal save location...');
       const saveLocation = await getAndroidSaveLocation(fileName, "html");
       console.log('Save location determined:', saveLocation);
 
       // Write the file
-      console.log(`Writing file to ${saveLocation.directory}/${saveLocation.path}`);
+      console.log(`✏️ Writing file to ${saveLocation.directory}/${saveLocation.path}`);
       const writeResult = await Filesystem.writeFile({
         path: saveLocation.path,
-        data: htmlContent,
+        data: htmlContent, // This comes from the existing code we kept
         directory: saveLocation.directory,
         encoding: 'UTF8'
       });
@@ -511,7 +582,7 @@ export const downloadPDF = async (
       console.log('Write result:', writeResult);
 
       // Get full URI for the saved file
-      console.log('Getting file URI...');
+      console.log('🔍 Getting file URI...');
       const fileInfo = await Filesystem.getUri({
         path: saveLocation.path,
         directory: saveLocation.directory
@@ -519,11 +590,12 @@ export const downloadPDF = async (
 
       // Set the global variable with the full file path
       window.lastGeneratedFilePath = fileInfo.uri;
+      console.log('🎯 Global path variable set to:', window.lastGeneratedFilePath);
 
       // Enhanced logging with more context
-      console.log(`PDF File Generated: ${fileName}`);
-      console.log(`Save Directory: ${saveLocation.directory}`);
-      console.log(`Full File Path: ${fileInfo.uri}`);
+      console.log(`✅ PDF File Generated: ${fileName}`);
+      console.log(`📂 Save Directory: ${saveLocation.directory}`);
+      console.log(`📄 Full File Path: ${fileInfo.uri}`);
 
       if (Toast) {
         await Toast.show({
@@ -534,11 +606,11 @@ export const downloadPDF = async (
       
       return true;
     } catch (error) {
-      console.error('Android file write error:', error);
+      console.error('⛔ Android file write error:', error);
       const Toast = await getToast();
       if (Toast) {
         await Toast.show({
-          text: `Error saving file: ${(error as Error).message}`,
+          text: `Error saving file: ${(error as Error).message}. Please check app permissions.`,
           duration: 'long'
         });
       }

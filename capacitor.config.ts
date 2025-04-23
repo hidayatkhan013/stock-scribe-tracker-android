@@ -28,7 +28,7 @@ const config: CapacitorConfig = {
     ]
   },
   plugins: {
-    // Configure filesystem plugin with more explicit permissions
+    // Configure filesystem plugin with more explicit permissions request
     Filesystem: {
       androidPermissions: true
     }

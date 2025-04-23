@@ -20,7 +20,7 @@ import {
   PopoverTrigger 
 } from '@/components/ui/popover';
 import { format, subMonths } from 'date-fns';
-import { CalendarIcon, FileText, FileDown, RefreshCw } from 'lucide-react';
+import { CalendarIcon, FileText, FileDown, RefreshCw, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { db, getTransactionsForUser, getPortfolioSummary, getProfitLossReport } from '@/lib/db';
@@ -43,10 +43,29 @@ const Export = () => {
     data: any[];
   }[]>([]);
   const [isAndroidDevice, setIsAndroidDevice] = useState(false);
+  const [androidPermissionAttempted, setAndroidPermissionAttempted] = useState(false);
 
   // Check if running on Android device
   useEffect(() => {
     setIsAndroidDevice(isAndroid() && isCapacitorNative());
+  }, []);
+
+  // Force permission request when component loads on Android
+  useEffect(() => {
+    const requestPermissionsOnLoad = async () => {
+      if (isAndroid() && isCapacitorNative()) {
+        try {
+          console.log('🔑 Preemptively requesting storage permissions on page load');
+          const { Filesystem } = await import('@capacitor/filesystem');
+          await Filesystem.requestPermissions();
+          setAndroidPermissionAttempted(true);
+        } catch (error) {
+          console.error('Error requesting permissions on load:', error);
+        }
+      }
+    };
+    
+    requestPermissionsOnLoad();
   }, []);
 
   const handleHistoryClick = (fileName: string, type: string, data: any[], fullPath?: string) => {
@@ -58,6 +77,46 @@ const Export = () => {
     
     if (fullPath) {
       console.log(`Full file path: ${fullPath}`);
+    }
+  };
+
+  const forceRequestPermission = async () => {
+    if (!isAndroidDevice) return;
+    
+    try {
+      setIsLoading(true);
+      console.log('🔑 Manually triggering permission request');
+      const { Filesystem } = await import('@capacitor/filesystem');
+      const { Toast } = await import('@capacitor/toast');
+      
+      // Show toast before requesting permission
+      await Toast.show({
+        text: 'Please grant storage permissions when prompted',
+        duration: 'long'
+      });
+      
+      // Request permissions explicitly
+      const result = await Filesystem.requestPermissions();
+      console.log('Manual permission request result:', result);
+      
+      setAndroidPermissionAttempted(true);
+      
+      if (result.publicStorage === 'granted') {
+        toast({
+          title: 'Storage Permission Granted',
+          description: 'You can now export files to your device',
+        });
+      } else {
+        toast({
+          title: 'Permission Required',
+          description: 'Storage permission is needed to save files. Please enable it in app settings.',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Error requesting permissions:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -127,6 +186,14 @@ const Export = () => {
       
       // Reset the global file path variable before export
       window.lastGeneratedFilePath = undefined;
+      
+      // Show toast specifically for Android users about permission
+      if (isAndroidDevice) {
+        toast({
+          title: 'Storage Permission',
+          description: 'Please grant storage access when prompted',
+        });
+      }
       
       let exportSuccess = false;
       if (exportType === 'csv') {
@@ -291,12 +358,26 @@ const Export = () => {
             </div>
 
             {isAndroidDevice && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 text-sm text-yellow-800">
-                <p className="font-medium">Android Storage Access</p>
-                <p className="mt-1">
-                  For Android 10+, make sure to grant storage permissions when prompted. 
-                  Files will be saved to your Download/StockScribe folder.
-                </p>
+              <div className="bg-amber-50 border border-amber-200 rounded-md p-4 text-sm">
+                <div className="flex items-start">
+                  <AlertCircle className="h-5 w-5 text-amber-500 mt-0.5 mr-3" />
+                  <div>
+                    <p className="font-medium text-amber-800">Android Storage Access</p>
+                    <p className="mt-1 text-amber-700">
+                      Android 10+ requires explicit storage permission. If files aren't saving, 
+                      try the button below to request storage access.
+                    </p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-2 bg-amber-100 hover:bg-amber-200 text-amber-800 border-amber-300"
+                      onClick={forceRequestPermission}
+                      disabled={isLoading}
+                    >
+                      Request Storage Permission
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
 
