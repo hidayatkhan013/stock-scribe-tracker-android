@@ -16,7 +16,7 @@ const config: CapacitorConfig = {
       keystorePassword: null,
       keystoreAliasPassword: null,
     },
-    // More comprehensive Android permissions for file access
+    // Most explicit Android permissions possible
     permissions: [
       "android.permission.READ_EXTERNAL_STORAGE",
       "android.permission.WRITE_EXTERNAL_STORAGE",
@@ -28,7 +28,7 @@ const config: CapacitorConfig = {
     ]
   },
   plugins: {
-    // Configure filesystem plugin with more explicit permissions request
+    // Force file system permissions
     Filesystem: {
       androidPermissions: true
     }

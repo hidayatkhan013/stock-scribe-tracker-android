@@ -62,7 +62,7 @@ const getFilesystem = async (): Promise<FilesystemPlugin | null> => {
     try {
       console.log('Loading Filesystem plugin...');
       const capacitorModule = await import('@capacitor/filesystem');
-      console.log('Filesystem plugin loaded successfully');
+      console.log('Filesystem plugin loaded successfully', capacitorModule.Filesystem);
       return capacitorModule.Filesystem;
     } catch (error) {
       console.error('Error loading Filesystem plugin:', error);
@@ -77,6 +77,7 @@ const getToast = async (): Promise<ToastPlugin | null> => {
   if (isCapacitorNative()) {
     try {
       const toastModule = await import('@capacitor/toast');
+      console.log('Toast plugin loaded successfully');
       return toastModule.Toast;
     } catch (error) {
       console.error('Error loading Toast plugin:', error);

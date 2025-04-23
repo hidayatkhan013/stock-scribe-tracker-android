@@ -22,7 +22,7 @@ import {
 import { format, subMonths } from 'date-fns';
 import { CalendarIcon, FileText, FileDown, RefreshCw, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { db, getTransactionsForUser, getPortfolioSummary, getProfitLossReport } from '@/lib/db';
 import { downloadCSV, downloadPDF, isAndroid, isCapacitorNative } from '@/utils/fileUtils';
 
@@ -44,10 +44,28 @@ const Export = () => {
   }[]>([]);
   const [isAndroidDevice, setIsAndroidDevice] = useState(false);
   const [androidPermissionAttempted, setAndroidPermissionAttempted] = useState(false);
+  const [isPermissionLoading, setIsPermissionLoading] = useState(false);
 
   // Check if running on Android device
   useEffect(() => {
-    setIsAndroidDevice(isAndroid() && isCapacitorNative());
+    const checkPlatform = async () => {
+      const isAndroidPlatform = isAndroid() && isCapacitorNative();
+      setIsAndroidDevice(isAndroidPlatform);
+      
+      // Load Capacitor plugins early to avoid initialization issues
+      if (isAndroidPlatform) {
+        try {
+          // Pre-load the plugins to ensure they're available
+          const { Filesystem } = await import('@capacitor/filesystem');
+          const { Toast } = await import('@capacitor/toast');
+          console.log('Capacitor plugins pre-loaded successfully');
+        } catch (error) {
+          console.error('Error pre-loading Capacitor plugins:', error);
+        }
+      }
+    };
+    
+    checkPlatform();
   }, []);
 
   // Force permission request when component loads on Android
@@ -84,39 +102,114 @@ const Export = () => {
     if (!isAndroidDevice) return;
     
     try {
-      setIsLoading(true);
+      setIsPermissionLoading(true);
       console.log('🔑 Manually triggering permission request');
-      const { Filesystem } = await import('@capacitor/filesystem');
-      const { Toast } = await import('@capacitor/toast');
+      
+      // Import modules with explicit error handling
+      let Filesystem, Toast;
+      try {
+        const filesystemModule = await import('@capacitor/filesystem');
+        Filesystem = filesystemModule.Filesystem;
+        console.log('Filesystem module imported successfully');
+        
+        const toastModule = await import('@capacitor/toast');
+        Toast = toastModule.Toast;
+        console.log('Toast module imported successfully');
+      } catch (importError) {
+        console.error('Error importing Capacitor modules:', importError);
+        throw new Error(`Failed to import Capacitor modules: ${importError.message}`);
+      }
+      
+      if (!Filesystem) {
+        throw new Error('Filesystem plugin not available after import');
+      }
       
       // Show toast before requesting permission
-      await Toast.show({
-        text: 'Please grant storage permissions when prompted',
-        duration: 'long'
-      });
+      try {
+        if (Toast) {
+          await Toast.show({
+            text: 'Please grant storage permissions when prompted',
+            duration: 'long'
+          });
+          console.log('Toast shown successfully');
+        }
+      } catch (toastError) {
+        console.error('Error showing toast:', toastError);
+        // Continue even if toast fails
+      }
       
-      // Request permissions explicitly
-      const result = await Filesystem.requestPermissions();
-      console.log('Manual permission request result:', result);
+      // Check current permissions first
+      let currentPermissions;
+      try {
+        currentPermissions = await Filesystem.checkPermissions();
+        console.log('Current permissions:', currentPermissions);
+        
+        // If already granted, show that information
+        if (currentPermissions.publicStorage === 'granted') {
+          toast({
+            title: 'Permissions Already Granted',
+            description: 'Storage permissions are already active'
+          });
+          setAndroidPermissionAttempted(true);
+          return;
+        }
+      } catch (checkError) {
+        console.error('Error checking current permissions:', checkError);
+      }
       
-      setAndroidPermissionAttempted(true);
+      // Request permissions explicitly with retry logic
+      console.log('Requesting permissions - first attempt');
+      let permissionResult;
       
-      if (result.publicStorage === 'granted') {
+      try {
+        permissionResult = await Filesystem.requestPermissions();
+        console.log('Permission request result (1st attempt):', permissionResult);
+      } catch (requestError) {
+        console.error('Error on first permission request:', requestError);
+        
+        // Show error in UI
+        toast({
+          title: 'Permission Request Failed',
+          description: 'First attempt failed. Trying again...',
+          variant: 'destructive'
+        });
+        
+        // Try second time after delay
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        try {
+          permissionResult = await Filesystem.requestPermissions();
+          console.log('Permission request result (2nd attempt):', permissionResult);
+        } catch (retryError) {
+          console.error('Error on second permission request:', retryError);
+          throw retryError;
+        }
+      }
+      
+      // Verify and notify results
+      if (permissionResult?.publicStorage === 'granted') {
         toast({
           title: 'Storage Permission Granted',
-          description: 'You can now export files to your device',
+          description: 'You can now export files to your device'
         });
       } else {
         toast({
           title: 'Permission Required',
           description: 'Storage permission is needed to save files. Please enable it in app settings.',
-          variant: 'destructive',
+          variant: 'destructive'
         });
       }
+      
+      setAndroidPermissionAttempted(true);
     } catch (error) {
-      console.error('Error requesting permissions:', error);
+      console.error('Permission request process failed:', error);
+      toast({
+        title: 'Permission Request Failed',
+        description: `Error: ${error.message}. Please check logs and app settings.`,
+        variant: 'destructive'
+      });
     } finally {
-      setIsLoading(false);
+      setIsPermissionLoading(false);
     }
   };
 
@@ -372,9 +465,16 @@ const Export = () => {
                       size="sm" 
                       className="mt-2 bg-amber-100 hover:bg-amber-200 text-amber-800 border-amber-300"
                       onClick={forceRequestPermission}
-                      disabled={isLoading}
+                      disabled={isPermissionLoading}
                     >
-                      Request Storage Permission
+                      {isPermissionLoading ? (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                          Requesting...
+                        </>
+                      ) : (
+                        "Request Storage Permission"
+                      )}
                     </Button>
                   </div>
                 </div>
