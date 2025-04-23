@@ -44,18 +44,28 @@ const Login = () => {
     setIsLoading(true);
     try {
       const result = await login(values.username, values.password);
-      if (result.success) {
+      // Check if result is an object with success property
+      if (result && typeof result === 'object' && 'success' in result) {
+        if (result.success) {
+          toast({
+            title: "Login successful",
+            description: "Welcome back!",
+          });
+          navigate("/dashboard");
+        } else {
+          toast({
+            title: "Login failed",
+            description: result.error || "Invalid username or password",
+            variant: "destructive",
+          });
+        }
+      } else {
+        // Handle case when login returns a User object
         toast({
           title: "Login successful",
           description: "Welcome back!",
         });
         navigate("/dashboard");
-      } else {
-        toast({
-          title: "Login failed",
-          description: result.error || "Invalid username or password",
-          variant: "destructive",
-        });
       }
     } catch (error) {
       toast({

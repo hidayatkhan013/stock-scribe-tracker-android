@@ -31,6 +31,10 @@ const config: CapacitorConfig = {
     // Force file system permissions
     Filesystem: {
       androidPermissions: true
+    },
+    // Added for better error messages
+    Toast: {
+      androidPermissions: true
     }
   }
 };

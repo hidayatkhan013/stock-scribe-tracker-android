@@ -399,13 +399,13 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
         const saveLocation = await getAndroidSaveLocation(fileName, "csv");
         console.log('Save location determined:', saveLocation);
 
-        // Write the file
+        // Write the file - Fix the encoding to 'utf8' (correct case)
         console.log(`✏️ Writing file to ${saveLocation.directory}/${saveLocation.path}`);
         const writeResult = await Filesystem.writeFile({
           path: saveLocation.path,
           data: csvContent,
           directory: saveLocation.directory,
-          encoding: 'UTF8'
+          encoding: 'utf8'  // Changed from 'UTF8' to 'utf8'
         });
         
         console.log('Write result:', writeResult);
@@ -608,13 +608,13 @@ export const downloadPDF = async (
       const saveLocation = await getAndroidSaveLocation(fileName, "html");
       console.log('Save location determined:', saveLocation);
 
-      // Write the file
+      // Write the file - Fix the encoding to 'utf8' (correct case)
       console.log(`✏️ Writing file to ${saveLocation.directory}/${saveLocation.path}`);
       const writeResult = await Filesystem.writeFile({
         path: saveLocation.path,
-        data: htmlContent, // This comes from the existing code we kept
+        data: htmlContent,
         directory: saveLocation.directory,
-        encoding: 'UTF8'
+        encoding: 'utf8'  // Changed from 'UTF8' to 'utf8'
       });
       
       console.log('Write result:', writeResult);
