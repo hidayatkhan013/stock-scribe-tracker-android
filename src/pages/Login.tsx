@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -14,16 +13,13 @@ import { useToast } from "@/hooks/use-toast";
 import { isAndroid, isCapacitorNative } from "@/utils/fileUtils";
 import CapacitorTester from "@/components/CapacitorTester";
 
-// Define the form schema with Zod
 const LoginSchema = z.object({
   username: z.string().min(1, { message: "Username is required" }),
   password: z.string().min(1, { message: "Password is required" }),
 });
 
-// Define the form values type from the schema
 type LoginFormValues = z.infer<typeof LoginSchema>;
 
-// Define types for login response
 interface LoginErrorResponse {
   success: false;
   error: string;
@@ -31,9 +27,10 @@ interface LoginErrorResponse {
 
 interface LoginSuccessResponse {
   success: true;
+  user?: any;
 }
 
-type LoginResponse = LoginSuccessResponse | LoginErrorResponse | User;
+type LoginResponse = LoginErrorResponse | LoginSuccessResponse;
 
 const Login = () => {
   const navigate = useNavigate();
@@ -41,8 +38,7 @@ const Login = () => {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const isAndroidDevice = isAndroid() && isCapacitorNative();
-  
-  // Initialize the form with react-hook-form and the schema
+
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(LoginSchema),
     defaultValues: {
@@ -51,13 +47,12 @@ const Login = () => {
     },
   });
 
-  // Handle form submission
   const onSubmit = async (values: LoginFormValues) => {
     setIsLoading(true);
     try {
       const result = await login(values.username, values.password);
-      // Check if result is an object with success property
-      if (result && typeof result === 'object' && 'success' in result) {
+      
+      if ('success' in result) {
         if (result.success) {
           toast({
             title: "Login successful",
@@ -65,16 +60,13 @@ const Login = () => {
           });
           navigate("/dashboard");
         } else {
-          // Type assertion to fix the TypeScript error
-          const errorResult = result as LoginErrorResponse;
           toast({
             title: "Login failed",
-            description: errorResult.error || "Invalid username or password",
+            description: (result as LoginErrorResponse).error || "Invalid username or password",
             variant: "destructive",
           });
         }
       } else {
-        // Handle case when login returns a User object
         toast({
           title: "Login successful",
           description: "Welcome back!",
@@ -163,7 +155,6 @@ const Login = () => {
           </CardFooter>
         </Card>
         
-        {/* Capacitor Permission Tester for Android */}
         {isAndroidDevice && <CapacitorTester />}
       </div>
     </div>

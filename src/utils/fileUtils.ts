@@ -1,44 +1,4 @@
-// Use dynamic imports for Capacitor modules to prevent build issues
-// These types are just for TypeScript and won't be included in the final bundle
-type FilesystemPlugin = {
-  writeFile: (options: {
-    path: string;
-    data: string;
-    directory: any;
-    encoding: any;
-  }) => Promise<any>;
-  getUri: (options: {
-    path: string;
-    directory: any;
-  }) => Promise<{ uri: string }>;
-  mkdir: (options: {
-    path: string;
-    directory: any;
-    recursive: boolean;
-  }) => Promise<void>;
-  checkPermissions: () => Promise<{ publicStorage: string }>;
-  requestPermissions: () => Promise<{ publicStorage: string }>;
-};
-
-type ToastPlugin = {
-  show: (options: { text: string; duration: "long" | "short" }) => Promise<void>;
-};
-
-type CapacitorGlobal = {
-  isNativePlatform: () => boolean;
-  getPlatform: () => string;
-};
-
-// Add a global variable to store the last generated file path
-declare global {
-  interface Window {
-    lastGeneratedFilePath?: string;
-  }
-}
-
-/**
- * Detects if the application is running on an Android device
- */
+// Platform detection utils
 export const isAndroid = (): boolean => {
   return (typeof (window as any).Capacitor !== 'undefined' && 
     (window as any).Capacitor.getPlatform() === 'android') || 
@@ -47,321 +7,36 @@ export const isAndroid = (): boolean => {
     window.navigator.userAgent.includes('Android'));
 };
 
-/**
- * Checks if the Capacitor runtime is available (running as native app)
- */
 export const isCapacitorNative = (): boolean => {
   return typeof (window as any).Capacitor !== 'undefined' && 
     (window as any).Capacitor.isNativePlatform();
 };
 
-// Function to dynamically load Capacitor Filesystem plugin
-const getFilesystem = async (): Promise<FilesystemPlugin | null> => {
-  if (isCapacitorNative()) {
-    try {
-      console.log('Loading Filesystem plugin...');
-      // Use a try-catch around the import to handle any import errors
-      let filesystemModule;
-      try {
-        filesystemModule = await import('@capacitor/filesystem');
-        console.log('Filesystem module imported successfully', filesystemModule.Filesystem);
-        return filesystemModule.Filesystem;
-      } catch (importError) {
-        console.error('Error importing Filesystem module:', importError);
-        
-        // Try alternative import approach with explicit error handling
-        try {
-          // Sometimes dynamic imports need to be handled differently
-          const capacitorNamespace = (window as any).Capacitor;
-          if (capacitorNamespace && capacitorNamespace.Plugins && capacitorNamespace.Plugins.Filesystem) {
-            console.log('Using Capacitor namespace for Filesystem plugin');
-            return capacitorNamespace.Plugins.Filesystem;
-          }
-          throw new Error('Filesystem not available in Capacitor plugins namespace');
-        } catch (fallbackError) {
-          console.error('Fallback filesystem access failed:', fallbackError);
-          return null;
-        }
-      }
-    } catch (error) {
-      console.error('Error loading Filesystem plugin:', error);
-      return null;
-    }
-  }
-  return null;
-};
-
-// Function to dynamically load Capacitor Toast plugin
-const getToast = async (): Promise<ToastPlugin | null> => {
-  if (isCapacitorNative()) {
-    try {
-      // Use a try-catch around the import to handle any import errors
-      try {
-        const toastModule = await import('@capacitor/toast');
-        console.log('Toast module imported successfully');
-        return toastModule.Toast;
-      } catch (importError) {
-        console.error('Error importing Toast module:', importError);
-        
-        // Try alternative import approach
-        try {
-          const capacitorNamespace = (window as any).Capacitor;
-          if (capacitorNamespace && capacitorNamespace.Plugins && capacitorNamespace.Plugins.Toast) {
-            console.log('Using Capacitor namespace for Toast plugin');
-            return capacitorNamespace.Plugins.Toast;
-          }
-          throw new Error('Toast not available in Capacitor plugins namespace');
-        } catch (fallbackError) {
-          console.error('Fallback toast access failed:', fallbackError);
-          return null;
-        }
-      }
-    } catch (error) {
-      console.error('Error loading Toast plugin:', error);
-      return null;
-    }
-  }
-  return null;
-};
+interface SaveResult {
+  success: boolean;
+  message: string;
+  filePath?: string;
+}
 
 /**
- * CRITICAL: Explicitly request storage permissions for Android
- * This function force-requests permissions multiple times with delays
+ * Downloads data as a CSV file using the browser's download capabilities
  */
-const ensureStoragePermissions = async (): Promise<boolean> => {
-  if (!isAndroid() || !isCapacitorNative()) return true;
-
+export const downloadCSV = async (data: any[], fileName: string): Promise<SaveResult> => {
   try {
-    const Filesystem = await getFilesystem();
-    if (!Filesystem) {
-      console.error('Filesystem plugin not available for permissions');
-      return false;
+    if (!data.length) {
+      return {
+        success: false,
+        message: 'No data to export'
+      };
     }
 
-    console.log('⚠️ ACTIVELY REQUESTING STORAGE PERMISSIONS...');
-    
-    // First check current permissions
-    const checkResult = await Filesystem.checkPermissions();
-    console.log('Initial permission status:', checkResult);
-    
-    if (checkResult.publicStorage !== 'granted') {
-      // First request - CRITICAL for Android 10
-      console.log('🔴 Permissions not granted, making FIRST explicit request...');
-      const Toast = await getToast();
-      if (Toast) {
-        await Toast.show({
-          text: 'Please grant storage permissions to save files',
-          duration: 'long'
-        });
-      }
-      
-      const requestResult = await Filesystem.requestPermissions();
-      console.log('First permission request result:', requestResult);
-      
-      // For Android 10+, we need multiple permission requests
-      if (requestResult.publicStorage !== 'granted') {
-        console.log('🔴 Permissions not granted on first attempt, making SECOND request after delay...');
-        
-        // Show toast before second attempt
-        if (Toast) {
-          await Toast.show({
-            text: 'Storage access is required - please grant permissions',
-            duration: 'long'
-          });
-        }
-        
-        // Add delay before second attempt
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const secondAttempt = await Filesystem.requestPermissions();
-        console.log('Second permission request result:', secondAttempt);
-        
-        // If still not granted, try one final time with longer delay
-        if (secondAttempt.publicStorage !== 'granted') {
-          console.log('🔴 Permissions STILL not granted, making FINAL attempt after longer delay...');
-          
-          // Show toast before final attempt
-          if (Toast) {
-            await Toast.show({
-              text: 'Final attempt: Please grant storage permissions now',
-              duration: 'long'
-            });
-          }
-          
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          const finalAttempt = await Filesystem.requestPermissions();
-          console.log('Final permission request result:', finalAttempt);
-          
-          if (finalAttempt.publicStorage !== 'granted') {
-            console.log('⛔ All permission attempts failed - will try to save anyway');
-            return false;
-          }
-          
-          return finalAttempt.publicStorage === 'granted';
-        }
-        
-        return secondAttempt.publicStorage === 'granted';
-      }
-      
-      return requestResult.publicStorage === 'granted';
-    }
-    
-    console.log('✅ Storage permissions already granted');
-    return checkResult.publicStorage === 'granted';
-  } catch (error) {
-    console.error('Permission check/request failed:', error);
-    // Even if permission checks fail, we'll try to write anyway
-    return true;
-  }
-};
-
-/**
- * Creates directory path if it doesn't exist
- */
-const ensureDirectoryExists = async (path: string, directory: string): Promise<boolean> => {
-  try {
-    const Filesystem = await getFilesystem();
-    if (!Filesystem) return false;
-
-    console.log(`Creating directory if needed: ${directory}/${path}`);
-
-    await Filesystem.mkdir({
-      path,
-      directory,
-      recursive: true
-    });
-    console.log(`✅ Directory created: ${directory}/${path}`);
-    return true;
-  } catch (error) {
-    // Directory might already exist, which is fine
-    console.log('Directory exists or error creating:', error);
-    return true;
-  }
-};
-
-/**
- * Tries multiple save locations for Android files
- * Returns the first successful location or falls back to app documents
- * Optimized for Android 10+ compatibility
- */
-const getAndroidSaveLocation = async (fileName: string, ext: string): Promise<{
-  path: string;
-  directory: string;
-  displayPath: string;
-}> => {
-  // First, force permissions check/request
-  const permissionsGranted = await ensureStoragePermissions();
-  console.log('Storage permissions check completed, granted:', permissionsGranted);
-  
-  // Try various Android storage options in order of preference
-  const saveLocations = [
-    // First try: Download folder with no subfolder (most compatible for Android 10)
-    {
-      try: async () => {
-        console.log('🔍 ATTEMPT 1: Trying to save directly to Downloads folder (best for Android 10)');
-        return {
-          path: `${fileName}.${ext}`, // No subfolder
-          directory: 'EXTERNAL_STORAGE',
-          displayPath: `Downloads/${fileName}.${ext}`
-        };
-      }
-    },
-    // Second try: Download in external storage (preferred for modern Android)
-    {
-      try: async () => {
-        console.log('🔍 ATTEMPT 2: Trying to save to Downloads folder in external storage');
-        await ensureDirectoryExists('Download', 'EXTERNAL');
-        return {
-          path: `Download/${fileName}.${ext}`,
-          directory: 'EXTERNAL',
-          displayPath: `Download/${fileName}.${ext}`
-        };
-      }
-    },
-    // Third try: External directory root (simpler path for Android 10)
-    {
-      try: async () => {
-        console.log('🔍 ATTEMPT 3: Trying to save to external storage root');
-        return {
-          path: `${fileName}.${ext}`,
-          directory: 'EXTERNAL',
-          displayPath: `External Storage/${fileName}.${ext}`
-        };
-      }
-    },
-    // Fourth try: Documents in external storage
-    {
-      try: async () => {
-        console.log('🔍 ATTEMPT 4: Trying to save to Documents folder in external storage');
-        await ensureDirectoryExists('Documents', 'EXTERNAL');
-        return {
-          path: `Documents/${fileName}.${ext}`,
-          directory: 'EXTERNAL',
-          displayPath: `Documents/${fileName}.${ext}`
-        };
-      }
-    },
-    // Fifth try: External files directory (For Android 10+)
-    {
-      try: async () => {
-        console.log('🔍 ATTEMPT 5: Trying to save to external files directory');
-        return {
-          path: `${fileName}.${ext}`,
-          directory: 'EXTERNAL_FILES',
-          displayPath: `Files/${fileName}.${ext}`
-        };
-      }
-    },
-    // Final fallback: App-specific documents (most compatible fallback)
-    {
-      try: async () => {
-        console.log('🔍 FALLBACK: Using app-specific documents directory');
-        return {
-          path: `${fileName}.${ext}`,
-          directory: 'DOCUMENTS',
-          displayPath: `App Documents/${fileName}.${ext}`
-        };
-      }
-    }
-  ];
-  
-  // Try each location until one works
-  for (const location of saveLocations) {
-    try {
-      const result = await location.try();
-      console.log('✅ Successfully determined save location:', result);
-      return result;
-    } catch (error) {
-      console.error('Failed with this location, trying next:', error);
-    }
-  }
-  
-  // Final fallback if all else fails - use app's document directory
-  console.log('⚠️ All location attempts failed, using base app documents');
-  return {
-    path: `${fileName}.${ext}`,
-    directory: 'DOCUMENTS',
-    displayPath: `App Documents/${fileName}.${ext}`
-  };
-};
-
-/**
- * Downloads a CSV file
- * @param data Data to be saved to CSV
- * @param fileName Name of the file without extension
- */
-export const downloadCSV = async (data: any[], fileName: string): Promise<boolean> => {
-  if (!data.length) {
-    console.log('No data to export');
-    return false;
-  }
-  
-  try {
-    // Ensure all objects have the same keys by taking a union of all keys
+    // Ensure all objects have the same keys
     const allKeys = new Set<string>();
     data.forEach(item => {
       Object.keys(item).forEach(key => allKeys.add(key));
     });
     const headers = Array.from(allKeys);
+    
     let csvContent = headers.join(',') + '\n';
     data.forEach(item => {
       const row = headers.map(header => {
@@ -378,565 +53,201 @@ export const downloadCSV = async (data: any[], fileName: string): Promise<boolea
       csvContent += row + '\n';
     });
 
-    // For Android native app, use Capacitor Filesystem
-    if (isAndroid() && isCapacitorNative()) {
-      try {
-        console.log('📝 Starting CSV file save on Android...');
-        const Filesystem = await getFilesystem();
-        const Toast = await getToast();
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${fileName}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 
-        if (!Filesystem) {
-          console.error('Filesystem plugin not available');
-          throw new Error('Filesystem plugin not available');
-        }
-        
-        // Force permission request before trying to save
-        console.log('🔑 Requesting storage permissions before save...');
-        await ensureStoragePermissions();
-        
-        // Get the appropriate save location
-        console.log('📁 Determining optimal save location...');
-        const saveLocation = await getAndroidSaveLocation(fileName, "csv");
-        console.log('Save location determined:', saveLocation);
-
-        // Write the file - Fix the encoding to 'utf8' (correct case)
-        console.log(`✏️ Writing file to ${saveLocation.directory}/${saveLocation.path}`);
-        const writeResult = await Filesystem.writeFile({
-          path: saveLocation.path,
-          data: csvContent,
-          directory: saveLocation.directory,
-          encoding: 'utf8'  // Changed from 'UTF8' to 'utf8'
-        });
-        
-        console.log('Write result:', writeResult);
-
-        // Get full URI for the saved file
-        console.log('🔍 Getting file URI...');
-        const fileInfo = await Filesystem.getUri({
-          path: saveLocation.path,
-          directory: saveLocation.directory
-        });
-
-        // Set the global variable with the full file path
-        window.lastGeneratedFilePath = fileInfo.uri;
-        console.log('🎯 Global path variable set to:', window.lastGeneratedFilePath);
-
-        // Enhanced logging with more context
-        console.log(`✅ CSV File Generated: ${fileName}`);
-        console.log(`📂 Save Directory: ${saveLocation.directory}`);
-        console.log(`📄 Full File Path: ${fileInfo.uri}`);
-
-        if (Toast) {
-          await Toast.show({
-            text: `File saved to ${saveLocation.displayPath}`,
-            duration: 'long'
-          });
-        }
-
-        return true;
-      } catch (error) {
-        console.error('⛔ Android file write error:', error);
-        const Toast = await getToast();
-        if (Toast) {
-          await Toast.show({
-            text: `Error saving file: ${(error as Error).message}. Please check app permissions.`,
-            duration: 'long'
-          });
-        }
-        // Fall back to browser download if native save fails
-        return downloadBrowserFile(csvContent, `${fileName}.csv`, 'text/csv;charset=utf-8;');
-      }
-    } else {
-      // For web browser
-      return downloadBrowserFile(csvContent, `${fileName}.csv`, 'text/csv;charset=utf-8;');
-    }
+    return {
+      success: true,
+      message: `File ${fileName}.csv downloaded successfully`,
+      filePath: fileName + '.csv'
+    };
   } catch (error) {
     console.error('CSV generation error:', error);
-    return false;
+    return {
+      success: false,
+      message: `Error generating CSV: ${error.message || String(error)}`
+    };
   }
 };
 
 /**
- * Downloads a PDF-like HTML file styled as requested
- * @param data Data to be saved to PDF
- * @param fileName Name of the file without extension
- * @param username Optional username to show at the top
+ * Downloads data as an HTML file that looks like a PDF
  */
 export const downloadPDF = async (
   data: any[],
   fileName: string,
   username?: string
-): Promise<boolean> => {
-  if (!data.length) return false;
-
-  // Summaries and calculations for the header
-  const totalBuy = data
-    .filter((d) => d.type === 'buy' || d.type === 'Buy')
-    .reduce((sum, d) => sum + Number(d.amount || 0), 0);
-  const totalSell = data
-    .filter((d) => d.type === 'sell' || d.type === 'Sell')
-    .reduce((sum, d) => sum + Number(d.amount || 0), 0);
-  const netProfit = totalSell - totalBuy;
-
-  // Today's info
-  const now = new Date();
-  const formattedNow = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + " | " +
-      now.toLocaleDateString([], { day: '2-digit', month: 'short', year: '2-digit' });
-
-  // Determine unique columns based on data
-  const columns = ['date', 'type', 'details', 'shares', 'price', 'amount'];
-  const columnLabels: Record<string, string> = {
-    date: "Date",
-    type: "Type",
-    details: "Details",
-    shares: "Shares",
-    price: "Price",
-    amount: "Amount",
-  };
-
-  // Template with proper formatting and calculations
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>${fileName}</title>
-        <meta charset="utf-8">
-        <style>
-          @media print {
-            body { -webkit-print-color-adjust: exact; color-adjust: exact; }
-          }
-          body { background: #f8f9fc; font-family: 'Segoe UI', Arial, sans-serif; color: #232136; margin:0; padding:0; }
-          .report-container { margin: 20px auto; padding: 25px; background: #fff; max-width: 800px; border-radius: 12px; box-shadow: 0 2px 20px rgba(0,0,0,0.08); }
-          .report-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eaeaea; }
-          .report-title { color: #4040b2; font-weight: 700; font-size: 1.8rem; margin: 0; }
-          .user-subtitle { color: #5c5877; font-size: 1.1rem; margin: 8px 0 20px 0; }
-          .report-date { color: #7c7a8c; font-size: 0.9rem; text-align: right; }
-          .summary-container { display: flex; justify-content: space-between; margin-bottom: 20px; }
-          .summary-box { flex: 1; margin: 0 10px; padding: 12px 15px; border-radius: 8px; }
-          .buy-box { background: #f0f7ff; border: 1px solid #d0e3ff; }
-          .sell-box { background: #f7fff0; border: 1px solid #e3ffd0; }
-          .profit-box { background: #fff0f9; border: 1px solid #ffd0e8; }
-          .summary-label { font-size: 0.9rem; color: #555; margin-bottom: 5px; font-weight: 500; }
-          .summary-value { font-size: 1.3rem; font-weight: 700; }
-          .buy-value { color: #0055cc; }
-          .sell-value { color: #2a9d00; }
-          .profit-value { color: #cc0055; }
-          table { width: 100%; border-collapse: collapse; background: #fff; margin-bottom: 15px; border: 1px solid #e5e5f5; }
-          th { background: #f0f2ff; color: #4040b2; font-weight: 600; text-align: left; padding: 12px 10px; border-bottom: 2px solid #d8d8ff; }
-          td { padding: 10px; border-bottom: 1px solid #eee; }
-          tr:last-child td { border-bottom: none; }
-          tr:nth-child(even) { background: #f9faff; }
-          .type-buy { color: #0055cc; font-weight: 600; }
-          .type-sell { color: #2a9d00; font-weight: 600; }
-          .footer { margin-top: 20px; color: #9b87f5; font-size: 0.8rem; text-align: right; }
-          .text-right { text-align: right; }
-          .text-center { text-align: center; }
-        </style>
-      </head>
-      <body>
-        <div class="report-container">
-          <div class="report-header">
-            <div>
-              <h1 class="report-title">Stock Transaction Report</h1>
-              <div class="user-subtitle">${username || "User"}</div>
-            </div>
-            <div class="report-date">
-              Generated: ${formattedNow}
-            </div>
-          </div>
-          
-          <div class="summary-container">
-            <div class="summary-box buy-box">
-              <div class="summary-label">Total Buy</div>
-              <div class="summary-value buy-value">${totalBuy.toFixed(2)}</div>
-            </div>
-            <div class="summary-box sell-box">
-              <div class="summary-label">Total Sell</div>
-              <div class="summary-value sell-value">${totalSell.toFixed(2)}</div>
-            </div>
-            <div class="summary-box profit-box">
-              <div class="summary-label">Net Profit/Loss</div>
-              <div class="summary-value profit-value">${netProfit.toFixed(2)}</div>
-            </div>
-          </div>
-          
-          <table>
-            <thead>
-              <tr>
-                ${columns.map(col => `<th>${columnLabels[col]}</th>`).join("")}
-              </tr>
-            </thead>
-            <tbody>
-              ${data.map(row => `
-                <tr>
-                  <td>${row.date || ""}</td>
-                  <td class="type-${row.type && row.type.toLowerCase()}">
-                    ${row.type || ""}
-                  </td>
-                  <td>${row.details || row.note || row.description || ""}</td>
-                  <td class="text-center">${row.shares !== undefined ? row.shares : ""}</td>
-                  <td class="text-right">${row.price !== undefined ? row.price : ""}</td>
-                  <td class="text-right">${row.amount !== undefined ? row.amount : ""}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-          
-          <div class="footer">
-            StockScribe - Your personal stock trading tracker
-          </div>
-        </div>
-      </body>
-    </html>
-  `;
-
-  // Android native file save with .html as "PDF"
-  if (isAndroid() && isCapacitorNative()) {
-    try {
-      console.log('📝 Starting HTML/PDF file save on Android...');
-      const Filesystem = await getFilesystem();
-      const Toast = await getToast();
-
-      if (!Filesystem) throw new Error('Filesystem plugin not available');
-
-      // Force permission request before trying to save
-      console.log('🔑 Requesting storage permissions before save...');
-      await ensureStoragePermissions();
-      
-      // Get the appropriate save location
-      console.log('📁 Determining optimal save location...');
-      const saveLocation = await getAndroidSaveLocation(fileName, "html");
-      console.log('Save location determined:', saveLocation);
-
-      // Write the file - Fix the encoding to 'utf8' (correct case)
-      console.log(`✏️ Writing file to ${saveLocation.directory}/${saveLocation.path}`);
-      const writeResult = await Filesystem.writeFile({
-        path: saveLocation.path,
-        data: htmlContent,
-        directory: saveLocation.directory,
-        encoding: 'utf8'  // Changed from 'UTF8' to 'utf8'
-      });
-      
-      console.log('Write result:', writeResult);
-
-      // Get full URI for the saved file
-      console.log('🔍 Getting file URI...');
-      const fileInfo = await Filesystem.getUri({
-        path: saveLocation.path,
-        directory: saveLocation.directory
-      });
-
-      // Set the global variable with the full file path
-      window.lastGeneratedFilePath = fileInfo.uri;
-      console.log('🎯 Global path variable set to:', window.lastGeneratedFilePath);
-
-      // Enhanced logging with more context
-      console.log(`✅ PDF File Generated: ${fileName}`);
-      console.log(`📂 Save Directory: ${saveLocation.directory}`);
-      console.log(`📄 Full File Path: ${fileInfo.uri}`);
-
-      if (Toast) {
-        await Toast.show({
-          text: `File saved to ${saveLocation.displayPath}`,
-          duration: "long"
-        });
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('⛔ Android file write error:', error);
-      const Toast = await getToast();
-      if (Toast) {
-        await Toast.show({
-          text: `Error saving file: ${(error as Error).message}. Please check app permissions.`,
-          duration: 'long'
-        });
-      }
-      // Fall back to browser download
-      return downloadBrowserFile(htmlContent, `${fileName}.html`, 'text/html');
-    }
-  } else {
-    // For web browsers, download as .html file instead of opening in new tab
-    return downloadBrowserFile(htmlContent, `${fileName}.html`, 'text/html');
-  }
-};
-
-/**
- * Helper function to download a file in the browser
- */
-const downloadBrowserFile = (content: string, fileName: string, mimeType: string): boolean => {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  return true;
-};
-
-/**
- * Standalone function to test Capacitor permissions that can be called from anywhere
- * Does not require full fileUtils functionality
- */
-export const testCapacitorPermissions = async (): Promise<{success: boolean; message: string}> => {
-  try {
-    console.log('🧪 Testing Capacitor permissions...');
-    
-    if (!isAndroid() || !isCapacitorNative()) {
-      return { 
-        success: false, 
-        message: 'Not running on Android native platform' 
-      };
-    }
-    
-    console.log('✅ Detected Android native platform');
-    
-    // Test if Capacitor is available
-    const capacitor = (window as any).Capacitor;
-    if (!capacitor) {
-      return { 
-        success: false, 
-        message: 'Capacitor not available' 
-      };
-    }
-    
-    console.log('✅ Capacitor namespace found:', capacitor);
-    console.log('📱 Platform:', capacitor.getPlatform());
-    console.log('🔌 Plugins available:', capacitor.Plugins ? Object.keys(capacitor.Plugins) : 'None');
-    
-    // Try to load Filesystem
-    let filesystem;
-    try {
-      // Try direct import
-      filesystem = (await import('@capacitor/filesystem')).Filesystem;
-      console.log('✅ Successfully imported Filesystem module');
-    } catch (importError) {
-      console.error('❌ Failed to import Filesystem module:', importError);
-      
-      // Try to access from Capacitor plugins namespace as backup
-      if (capacitor.Plugins && capacitor.Plugins.Filesystem) {
-        filesystem = capacitor.Plugins.Filesystem;
-        console.log('✅ Found Filesystem in Capacitor.Plugins namespace');
-      } else {
-        return {
-          success: false,
-          message: `Failed to import Capacitor modules: ${importError}`
-        };
-      }
-    }
-    
-    // Check if we have a working Filesystem object
-    if (!filesystem) {
-      return {
-        success: false,
-        message: 'Filesystem plugin not available after all attempts'
-      };
-    }
-    
-    // Check that the necessary methods exist
-    if (!filesystem.requestPermissions || !filesystem.checkPermissions) {
-      return {
-        success: false,
-        message: 'Filesystem plugin missing required methods'
-      };
-    }
-    
-    // Try checking permissions
-    try {
-      const permissionStatus = await filesystem.checkPermissions();
-      console.log('📋 Current permissions:', permissionStatus);
-      
-      // Now try requesting permissions
-      console.log('🔑 Requesting permissions...');
-      const requestResult = await filesystem.requestPermissions();
-      console.log('📋 Permission request result:', requestResult);
-      
-      return {
-        success: true,
-        message: `Permissions test complete. Status: ${requestResult.publicStorage}`
-      };
-    } catch (permissionError) {
-      console.error('❌ Permission operation failed:', permissionError);
-      return {
-        success: false,
-        message: `Permission operation failed: ${permissionError.message || permissionError}`
-      };
-    }
-  } catch (error) {
-    console.error('❌ Test failed with error:', error);
-    return {
-      success: false,
-      message: `Test failed: ${error.message || String(error)}`
-    };
-  }
-};
-
-/**
- * Saves data as a CSV file
- * @param fileName Name of the file without extension
- * @param csvContent Content of the CSV file
- */
-export const saveAsCSV = async (
-  fileName: string,
-  csvContent: string
 ): Promise<SaveResult> => {
   try {
-    // Log that we're saving the file
-    console.log(`Saving file ${fileName} as CSV...`);
-
-    // Check if running on Android device in app
-    const isAndroidDevice = isAndroid() && isCapacitorNative();
-    console.log(`Running on Android device in app: ${isAndroidDevice}`);
-
-    if (isAndroidDevice) {
-      try {
-        // Import Capacitor modules
-        const { Filesystem } = await import('@capacitor/core');
-        const { Toast } = await import('@capacitor/toast');
-        
-        // First, try to request permissions
-        console.log('Requesting permissions for Android file save...');
-        await requestStoragePermission();
-        
-        // Get the save location based on Android version
-        const saveLocation = await getAndroidSaveLocation(fileName, "csv");
-        console.log('Save location determined:', saveLocation);
-
-        // Write the file - Fix the encoding to 'utf8' (correct case)
-        console.log(`✏️ Writing file to ${saveLocation.directory}/${saveLocation.path}`);
-        const writeResult = await Filesystem.writeFile({
-          path: saveLocation.path,
-          data: csvContent,
-          directory: saveLocation.directory,
-          encoding: 'utf8'  // Changed from 'UTF8' to 'utf8'
-        });
-        
-        console.log('Write result:', writeResult);
-        
-        // Show success message
-        await Toast.show({
-          text: `File successfully saved: ${saveLocation.path}`,
-          duration: 'long'
-        });
-        
-        return {
-          success: true,
-          message: `File saved to ${saveLocation.directory}/${saveLocation.path}`,
-          filePath: `${saveLocation.directory}/${saveLocation.path}`
-        };
-      } catch (error) {
-        console.error("Error saving file on Android:", error);
-        
-        // Show error message
-        const { Toast } = await import('@capacitor/toast');
-        await Toast.show({
-          text: `Error saving file: ${error.message || 'Unknown error'}`,
-          duration: 'long'
-        });
-        
-        return {
-          success: false,
-          message: `Error saving file: ${error.message || 'Unknown error'}`
-        };
-      }
-    } else {
-      // For web browsers
-      return downloadBrowserFile(csvContent, `${fileName}.csv`, 'text/csv;charset=utf-8;');
-    }
-  } catch (error) {
-    console.error("Error in saveAsCSV:", error);
-    return {
-      success: false,
-      message: `Error saving file: ${error.message || 'Unknown error'}`
-    };
-  }
-};
-
-/**
- * Saves data as an HTML file
- * @param fileName Name of the file without extension
- * @param htmlContent Content of the HTML file
- */
-export const saveAsHTML = async (fileName: string, htmlContent: string): Promise<SaveResult> => {
-  try {
-    console.log(`Saving file ${fileName} as HTML...`);
-
-    // Check if running on Android device in app
-    const isAndroidDevice = isAndroid() && isCapacitorNative();
-    console.log(`Running on Android device in app: ${isAndroidDevice}`);
-
-    if (isAndroidDevice) {
-      // Import Capacitor modules
-      const { Filesystem } = await import('@capacitor/core');
-      const { Toast } = await import('@capacitor/toast');
-      
-      // First, try to request permissions
-      console.log('Requesting permissions for Android file save...');
-      await requestStoragePermission();
-      
-      // Get the save location based on Android version
-      const saveLocation = await getAndroidSaveLocation(fileName, "html");
-      console.log('Save location determined:', saveLocation);
-
-      // Write the file - Fix the encoding to 'utf8' (correct case)
-      console.log(`✏️ Writing file to ${saveLocation.directory}/${saveLocation.path}`);
-      const writeResult = await Filesystem.writeFile({
-        path: saveLocation.path,
-        data: htmlContent,
-        directory: saveLocation.directory,
-        encoding: 'utf8'  // Changed from 'UTF8' to 'utf8'
-      });
-      
-      console.log('Write result:', writeResult);
-      
-      // Show success message
-      await Toast.show({
-        text: `File successfully saved: ${saveLocation.path}`,
-        duration: 'long'
-      });
-      
+    if (!data.length) {
       return {
-        success: true,
-        message: `File saved to ${saveLocation.directory}/${saveLocation.path}`,
-        filePath: `${saveLocation.directory}/${saveLocation.path}`
+        success: false,
+        message: 'No data to export'
       };
-    } else {
-      // For web browsers
-      return downloadBrowserFile(htmlContent, `${fileName}.html`, 'text/html');
     }
+
+    // Summaries and calculations for the header
+    const totalBuy = data
+      .filter((d) => d.type === 'buy' || d.type === 'Buy')
+      .reduce((sum, d) => sum + Number(d.amount || 0), 0);
+    const totalSell = data
+      .filter((d) => d.type === 'sell' || d.type === 'Sell')
+      .reduce((sum, d) => sum + Number(d.amount || 0), 0);
+    const netProfit = totalSell - totalBuy;
+
+    // Today's info
+    const now = new Date();
+    const formattedNow = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + " | " +
+        now.toLocaleDateString([], { day: '2-digit', month: 'short', year: '2-digit' });
+
+    // Determine unique columns based on data
+    const columns = ['date', 'type', 'details', 'shares', 'price', 'amount'];
+    const columnLabels: Record<string, string> = {
+      date: "Date",
+      type: "Type",
+      details: "Details",
+      shares: "Shares",
+      price: "Price",
+      amount: "Amount",
+    };
+
+    // Template with proper formatting and calculations
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${fileName}</title>
+          <meta charset="utf-8">
+          <style>
+            @media print {
+              body { -webkit-print-color-adjust: exact; color-adjust: exact; }
+            }
+            body { background: #f8f9fc; font-family: 'Segoe UI', Arial, sans-serif; color: #232136; margin:0; padding:0; }
+            .report-container { margin: 20px auto; padding: 25px; background: #fff; max-width: 800px; border-radius: 12px; box-shadow: 0 2px 20px rgba(0,0,0,0.08); }
+            .report-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eaeaea; }
+            .report-title { color: #4040b2; font-weight: 700; font-size: 1.8rem; margin: 0; }
+            .user-subtitle { color: #5c5877; font-size: 1.1rem; margin: 8px 0 20px 0; }
+            .report-date { color: #7c7a8c; font-size: 0.9rem; text-align: right; }
+            .summary-container { display: flex; justify-content: space-between; margin-bottom: 20px; }
+            .summary-box { flex: 1; margin: 0 10px; padding: 12px 15px; border-radius: 8px; }
+            .buy-box { background: #f0f7ff; border: 1px solid #d0e3ff; }
+            .sell-box { background: #f7fff0; border: 1px solid #e3ffd0; }
+            .profit-box { background: #fff0f9; border: 1px solid #ffd0e8; }
+            .summary-label { font-size: 0.9rem; color: #555; margin-bottom: 5px; font-weight: 500; }
+            .summary-value { font-size: 1.3rem; font-weight: 700; }
+            .buy-value { color: #0055cc; }
+            .sell-value { color: #2a9d00; }
+            .profit-value { color: #cc0055; }
+            table { width: 100%; border-collapse: collapse; background: #fff; margin-bottom: 15px; border: 1px solid #e5e5f5; }
+            th { background: #f0f2ff; color: #4040b2; font-weight: 600; text-align: left; padding: 12px 10px; border-bottom: 2px solid #d8d8ff; }
+            td { padding: 10px; border-bottom: 1px solid #eee; }
+            tr:last-child td { border-bottom: none; }
+            tr:nth-child(even) { background: #f9faff; }
+            .type-buy { color: #0055cc; font-weight: 600; }
+            .type-sell { color: #2a9d00; font-weight: 600; }
+            .footer { margin-top: 20px; color: #9b87f5; font-size: 0.8rem; text-align: right; }
+            .text-right { text-align: right; }
+            .text-center { text-align: center; }
+          </style>
+        </head>
+        <body>
+          <div class="report-container">
+            <div class="report-header">
+              <div>
+                <h1 class="report-title">Stock Transaction Report</h1>
+                <div class="user-subtitle">${username || "User"}</div>
+              </div>
+              <div class="report-date">
+                Generated: ${formattedNow}
+              </div>
+            </div>
+            
+            <div class="summary-container">
+              <div class="summary-box buy-box">
+                <div class="summary-label">Total Buy</div>
+                <div class="summary-value buy-value">${totalBuy.toFixed(2)}</div>
+              </div>
+              <div class="summary-box sell-box">
+                <div class="summary-label">Total Sell</div>
+                <div class="summary-value sell-value">${totalSell.toFixed(2)}</div>
+              </div>
+              <div class="summary-box profit-box">
+                <div class="summary-label">Net Profit/Loss</div>
+                <div class="summary-value profit-value">${netProfit.toFixed(2)}</div>
+              </div>
+            </div>
+            
+            <table>
+              <thead>
+                <tr>
+                  ${columns.map(col => `<th>${columnLabels[col]}</th>`).join("")}
+                </tr>
+              </thead>
+              <tbody>
+                ${data.map(row => `
+                  <tr>
+                    <td>${row.date || ""}</td>
+                    <td class="type-${row.type && row.type.toLowerCase()}">
+                      ${row.type || ""}
+                    </td>
+                    <td>${row.details || row.note || row.description || ""}</td>
+                    <td class="text-center">${row.shares !== undefined ? row.shares : ""}</td>
+                    <td class="text-right">${row.price !== undefined ? row.price : ""}</td>
+                    <td class="text-right">${row.amount !== undefined ? row.amount : ""}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+            
+            <div class="footer">
+              StockScribe - Your personal stock trading tracker
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${fileName}.html`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    return {
+      success: true,
+      message: `File ${fileName}.html downloaded successfully`,
+      filePath: fileName + '.html'
+    };
   } catch (error) {
-    console.error("Error saving HTML file:", error);
+    console.error('HTML/PDF generation error:', error);
     return {
       success: false,
-      message: `Error saving file: ${error.message || 'Unknown error'}`
+      message: `Error generating HTML: ${error.message || String(error)}`
     };
   }
 };
 
-interface SaveResult {
-  success: boolean;
-  message: string;
-  filePath?: string;
-}
-
-/**
- * Requests storage permission for Android
- */
-const requestStoragePermission = async (): Promise<void> => {
-  if (!isAndroid() || !isCapacitorNative()) return;
-
-  try {
-    const Filesystem = await getFilesystem();
-    if (!Filesystem) {
-      console.error('Filesystem plugin not available for permissions');
-      throw new Error('Filesystem plugin not available');
-    }
-
-    console.log('🔑 Requesting storage permissions before save...');
-    await ensureStoragePermissions();
-  } catch (error) {
-    console.error('Error requesting storage permissions:', error);
+// Simplified test function that just checks if we're on Android
+export const testCapacitorPermissions = async (): Promise<{success: boolean; message: string}> => {
+  if (!isAndroid() || !isCapacitorNative()) {
+    return { 
+      success: false, 
+      message: 'Not running on Android native platform' 
+    };
   }
+  return {
+    success: true,
+    message: 'Running on Android - downloads will use browser functionality'
+  };
 };
